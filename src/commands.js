@@ -150,4 +150,4 @@ export function registerCommands(bot) {
     await ctx.editMessageText(
       "ℹ️ FF ACCOUNT MANAGER HELP\n\n" +
       "Use the buttons to explore available options.\n\n" +
-      "🔐 Never submit
+      "🔐 Never submit passwords, OTPs, or access tokens to anyone."
