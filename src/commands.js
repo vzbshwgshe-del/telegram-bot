@@ -687,3 +687,230 @@ export function registerCommands(bot) {
           `『${name}』\n` +
           `★彡${name}彡★\n\n` +
           "Some symbols may not be accepted by the game.",
+                { reply_markup: ffToolsMenu() },
+      );
+      return;
+    }
+
+    if (action.startsWith("player_uid:")) {
+      const server = action.split(":")[1];
+
+      if (!/^\d{5,15}$/.test(message)) {
+        await ctx.reply(
+          "Please enter a valid numeric UID, or send /cancel.",
+        );
+        return;
+      }
+
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        "👤 PLAYER LOOKUP REQUEST\n\n" +
+          `UID: ${message}\n` +
+          `Server: ${server.toUpperCase()}\n\n` +
+          "Live stats API is not configured yet. No fake statistics will be shown.",
+        { reply_markup: backMenu() },
+      );
+      return;
+    }
+
+    if (action === "support") {
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        "✅ Support request received in this chat.\n\n" +
+          "This version does not save support messages to the database. " +
+          "Never share passwords, OTPs, or access tokens.",
+        { reply_markup: backMenu() },
+      );
+      return;
+    }
+
+    if (action === "user_search") {
+      if (!(await allowed(ctx, "view_users"))) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply("⛔ Permission denied.");
+        return;
+      }
+
+      if (!validTelegramId(message)) {
+        await ctx.reply("Enter a valid Telegram ID, or /cancel.");
+        return;
+      }
+
+      const result = await pool.query(
+        `SELECT telegram_id, username, first_name, first_seen, last_seen
+         FROM bot_users WHERE telegram_id = $1`,
+        [message],
+      );
+
+      pendingActions.delete(ctx.from.id);
+
+      if (!result.rowCount) {
+        await ctx.reply("❌ User not found.");
+        return;
+      }
+
+      const user = result.rows[0];
+
+      await ctx.reply(
+        "👤 USER INFORMATION\n\n" +
+          `ID: ${user.telegram_id}\n` +
+          `Name: ${user.first_name}\n` +
+          `Username: ${user.username ? "@" + user.username : "Not set"}\n` +
+          `First seen: ${new Date(user.first_seen).toLocaleString()}\n` +
+          `Last active: ${new Date(user.last_seen).toLocaleString()}`,
+      );
+      return;
+    }
+
+    if (action === "admin_add") {
+      if (!validTelegramId(message)) {
+        await ctx.reply("Enter a valid numeric Telegram ID, or /cancel.");
+        return;
+      }
+
+      if (message === OWNER_ID) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply("The owner is already protected.");
+        return;
+      }
+
+      const result = await pool.query(
+        `INSERT INTO bot_admins (telegram_id, permissions)
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (telegram_id) DO NOTHING
+         RETURNING telegram_id`,
+        [
+          message,
+          JSON.stringify({
+            view_dashboard: true,
+            view_users: true,
+            broadcast: false,
+          }),
+        ],
+      );
+
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        result.rowCount
+          ? `✅ Admin ${message} added.`
+          : `ℹ️ ${message} is already an admin.`,
+      );
+      return;
+    }
+
+    if (action === "admin_remove") {
+      if (!validTelegramId(message)) {
+        await ctx.reply("Enter a valid Telegram ID, or /cancel.");
+        return;
+      }
+
+      if (message === OWNER_ID) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply("⛔ The owner cannot be removed.");
+        return;
+      }
+
+      const result = await pool.query(
+        "DELETE FROM bot_admins WHERE telegram_id = $1 RETURNING telegram_id",
+        [message],
+      );
+
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        result.rowCount
+          ? `✅ Admin ${message} removed.`
+          : "That ID is not an admin.",
+      );
+      return;
+    }
+
+    if (action === "admin_permissions") {
+      const [id, permission, value] = message.split(/\s+/);
+
+      if (
+        !validTelegramId(id || "") ||
+        !Object.hasOwn(PERMISSIONS, permission) ||
+        !["on", "off"].includes(value)
+      ) {
+        await ctx.reply(
+          "Invalid format.\nExample: 123456789 broadcast off\nTry again or /cancel.",
+        );
+        return;
+      }
+
+      if (id === OWNER_ID) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply("⛔ Owner permissions cannot be changed.");
+        return;
+      }
+
+      const existing = await pool.query(
+        "SELECT permissions FROM bot_admins WHERE telegram_id = $1",
+        [id],
+      );
+
+      if (!existing.rowCount) {
+        await ctx.reply("That ID is not an admin. Try again or /cancel.");
+        return;
+      }
+
+      const permissions = {
+        ...existing.rows[0].permissions,
+        [permission]: value === "on",
+      };
+
+      await pool.query(
+        "UPDATE bot_admins SET permissions = $1::jsonb WHERE telegram_id = $2",
+        [JSON.stringify(permissions), id],
+      );
+
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        `✅ Permission updated.\nAdmin: ${id}\n${permission}: ${value}`,
+      );
+      return;
+    }
+
+    if (action === "broadcast") {
+      if (!(await allowed(ctx, "broadcast"))) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply("⛔ Permission denied.");
+        return;
+      }
+
+      pendingActions.delete(ctx.from.id);
+
+      const users = await pool.query("SELECT telegram_id FROM bot_users");
+      let sent = 0;
+      let failed = 0;
+
+      await ctx.reply(
+        `📢 Sending announcement to ${users.rowCount} users...`,
+      );
+
+      for (const user of users.rows) {
+        try {
+          await bot.api.sendMessage(user.telegram_id, message);
+          sent++;
+        } catch {
+          failed++;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      await ctx.reply(
+        `📢 BROADCAST COMPLETE\n\n✅ Sent: ${sent}\n❌ Failed: ${failed}`,
+      );
+      return;
+    }
+
+        pendingActions.delete(ctx.from.id);
+    await next();
+  });
+}
