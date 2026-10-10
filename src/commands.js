@@ -703,7 +703,7 @@ export function registerCommands(bot) {
   });
 
   // Return to main menu.
-  bot.callbackQuery("home", async (ctx) => {
+    bot.callbackQuery("home", async (ctx) => {
     await ctx.answerCallbackQuery();
 
     const admin = await getAdmin(ctx);
@@ -715,4 +715,4 @@ export function registerCommands(bot) {
       }
     );
   });
-        }
+}
