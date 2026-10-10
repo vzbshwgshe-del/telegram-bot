@@ -1,164 +1,53 @@
-import http from "node:http";
-import { Bot, webhookCallback } from "grammy";
+import "dotenv/config";
+import { Bot } from "grammy";
+import { pool, initializeDatabase } from "./src/database.js";
 import { registerCommands } from "./src/commands.js";
-import { initDatabase, pool } from "./src/database.js";
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
-
-if (!token) {
-  console.error("TELEGRAM_BOT_TOKEN is missing.");
-  process.exit(1);
+if (!process.env.TELEGRAM_BOT_TOKEN) {
+  throw new Error("TELEGRAM_BOT_TOKEN is missing.");
 }
 
 if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL is missing.");
-  process.exit(1);
+  throw new Error("DATABASE_URL is missing.");
 }
 
-const mode = (process.env.TELEGRAM_MODE || "polling")
-  .trim()
-  .toLowerCase();
+const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
 
-const bot = new Bot(token);
-
-bot.catch((err) => {
-  console.error("[bot] error while handling an update:", err.error ?? err);
+bot.catch((error) => {
+  console.error("[BOT ERROR]", error.error);
 });
 
-function explain(err) {
-  const code = err?.error_code ?? err?.response?.error_code;
-
-  if (code === 401 || code === 404) {
-    console.error("Telegram rejected the bot token. Check TELEGRAM_BOT_TOKEN.");
-  } else {
-    console.error("[bot] error:", err?.message ?? err);
-  }
-}
-
-async function main() {
-  try {
-    await initDatabase();
-    console.log("[database] connected successfully");
-  } catch (err) {
-    console.error("[database] connection or initialization failed:", err.message);
-    process.exit(1);
-  }
+async function start() {
+  await initializeDatabase();
 
   registerCommands(bot);
 
-  let me;
+  await bot.api.setMyCommands([
+    { command: "start", description: "Open main menu" },
+    { command: "help", description: "Get help" },
+    { command: "ping", description: "Check bot status" },
+    { command: "admin", description: "Open admin panel" },
+    { command: "cancel", description: "Cancel current action" }
+  ]);
 
-  try {
-    me = await bot.api.getMe();
-  } catch (err) {
-    explain(err);
-    await pool.end();
-    process.exit(1);
-  }
-
-  console.log(`[bot] logged in as @${me.username} (${mode} mode)`);
-
-  if (mode === "webhook") {
-    const url = (process.env.WEBHOOK_URL || "").trim().replace(/\/$/, "");
-
-    if (!url.startsWith("https://")) {
-      console.error("WEBHOOK_URL must be an HTTPS address.");
-      await pool.end();
-      process.exit(1);
+  await bot.start({
+    onStart: (info) => {
+      console.log(`Bot started: @${info.username}`);
     }
-
-    const secret = (process.env.WEBHOOK_SECRET || "").trim() || undefined;
-    const port = Number(process.env.PORT || 3000);
-    const handle = webhookCallback(bot, "http", { secretToken: secret });
-
-    http.createServer((req, res) => {
-      if (req.method === "POST" && req.url === "/telegram") {
-        return handle(req, res);
-      }
-
-      if (req.method === "GET" && req.url === "/") {
-        res.writeHead(200, { "content-type": "text/plain" });
-        return res.end(`@${me.username} is running`);
-      }
-
-      res.writeHead(404);
-      res.end();
-    }).listen(port, () => {
-      console.log(`[bot] webhook server listening on port ${port}`);
-    });
-
-    await bot.api.setWebhook(`${url}/telegram`, {
-      secret_token: secret
-    });
-
-    console.log(`[bot] webhook set to ${url}/telegram`);
-    return;
-  }
-
-  await bot.api.deleteWebhook().catch(() => {});
-
-  let wait = 20;
-  let waitingForOther = false;
-
-  for (;;) {
-    const began = Date.now();
-    let settled;
-
-    try {
-      await bot.start({
-        onStart: () => {
-          if (!waitingForOther) {
-            console.log("[bot] polling for updates");
-            return;
-          }
-
-          settled = setTimeout(() => {
-            waitingForOther = false;
-            wait = 20;
-            console.log("[bot] this bot is now receiving updates");
-          }, 45000);
-        }
-      });
-
-      return;
-    } catch (err) {
-      clearTimeout(settled);
-
-      const code = err?.error_code ?? err?.response?.error_code;
-
-      if (code === 401 || code === 404) {
-        explain(err);
-        await pool.end();
-        process.exit(1);
-      }
-
-      if (Date.now() - began > 120000) {
-        wait = 20;
-        waitingForOther = false;
-      }
-
-      if (code === 409) {
-        if (!waitingForOther) {
-          console.error("[bot] another copy of this bot is running.");
-          waitingForOther = true;
-        }
-      } else {
-        console.error("[bot] polling stopped:", err?.message ?? err);
-      }
-
-      console.error(`[bot] trying again in ${wait} seconds`);
-      await new Promise((resolve) => setTimeout(resolve, wait * 1000));
-      wait = Math.min(wait * 2, 300);
-    }
-  }
-}
-
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, () => {
-    console.log(`[bot] ${signal}, stopping`);
-    bot.stop();
-    pool.end().finally(() => process.exit(0));
   });
 }
 
-main();
+start().catch((error) => {
+  console.error("Startup failed:", error);
+  process.exit(1);
+});
+
+async function shutdown() {
+  console.log("Shutting down...");
+  await bot.stop();
+  await pool.end();
+  process.exit(0);
+}
+
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
