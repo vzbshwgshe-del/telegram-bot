@@ -15,7 +15,7 @@ function isOwner(ctx) {
   return String(ctx.from?.id) === OWNER_ID;
 }
 
-function mainMenu(ctx, admin = false) {
+function mainMenu(isAdmin = false) {
   const keyboard = new InlineKeyboard()
     .text("📧 Recovery Email", "recovery")
     .row()
@@ -23,16 +23,19 @@ function mainMenu(ctx, admin = false) {
     .row()
     .text("ℹ️ Help", "help");
 
-  if (admin) keyboard.row().text("👑 Admin Panel", "admin_panel");
+  if (isAdmin) keyboard.row().text("👑 Admin Panel", "admin_panel");
 
   return keyboard;
 }
 
 async function getAdmin(ctx) {
   if (isOwner(ctx)) {
-    return { isAdmin: true, permissions: Object.keys(PERMISSIONS).reduce(
-      (result, key) => ({ ...result, [key]: true }), {}
-    ) };
+    return {
+      isAdmin: true,
+      permissions: Object.fromEntries(
+        Object.keys(PERMISSIONS).map((key) => [key, true])
+      ),
+    };
   }
 
   const result = await pool.query(
@@ -60,8 +63,13 @@ async function showAdminPanel(ctx, edit = false) {
 
   if (!admin.isAdmin) {
     const message = "⛔ You are not authorized.";
-    if (edit) await ctx.editMessageText(message);
-    else await ctx.reply(message);
+
+    if (edit) {
+      await ctx.editMessageText(message);
+    } else {
+      await ctx.reply(message);
+    }
+
     return;
   }
 
@@ -95,20 +103,28 @@ async function showAdminPanel(ctx, edit = false) {
   const message = "👑 ADMIN PANEL\n\nSelect an option:";
 
   if (edit) {
-    await ctx.editMessageText(message, { reply_markup: keyboard });
+    await ctx.editMessageText(message, {
+      reply_markup: keyboard,
+    });
   } else {
-    await ctx.reply(message, { reply_markup: keyboard });
+    await ctx.reply(message, {
+      reply_markup: keyboard,
+    });
   }
 }
 
+function validTelegramId(value) {
+  return /^\d{5,20}$/.test(value);
+}
+
 export function registerCommands(bot) {
-  // Save Telegram user records in PostgreSQL.
+  // Save Telegram users in PostgreSQL.
   bot.use(async (ctx, next) => {
     if (ctx.from && !ctx.from.is_bot) {
       try {
         await pool.query(
           `INSERT INTO bot_users
-            (telegram_id, username, first_name, first_seen, last_seen)
+             (telegram_id, username, first_name, first_seen, last_seen)
            VALUES ($1, $2, $3, NOW(), NOW())
            ON CONFLICT (telegram_id)
            DO UPDATE SET
@@ -129,23 +145,29 @@ export function registerCommands(bot) {
     await next();
   });
 
+  // Main menu.
   bot.command("start", async (ctx) => {
     const admin = await getAdmin(ctx);
 
     await ctx.reply(
-      `🔥 FF ACCOUNT MANAGER 🔥\n\nWelcome, ${ctx.from.first_name || "Player"}!\n\nChoose an option below 👇`,
-      { reply_markup: mainMenu(ctx, admin.isAdmin) }
+      `🔥 FF ACCOUNT MANAGER 🔥\n\nWelcome, ${
+        ctx.from.first_name || "Player"
+      }!\n\nChoose an option below 👇`,
+      {
+        reply_markup: mainMenu(admin.isAdmin),
+      }
     );
   });
 
   bot.command("help", async (ctx) => {
     await ctx.reply(
       "ℹ️ HELP\n\n" +
-      "/start — Main menu\n" +
-      "/help — Help\n" +
-      "/ping — Bot status\n" +
-      "/admin — Admin panel\n\n" +
-      "🔐 Never share passwords, OTPs, or access tokens."
+        "/start — Main menu\n" +
+        "/help — Help\n" +
+        "/ping — Bot status\n" +
+        "/admin — Admin panel\n" +
+        "/cancel — Cancel an active action\n\n" +
+        "🔐 Never share passwords, OTPs, or access tokens."
     );
   });
 
@@ -157,17 +179,24 @@ export function registerCommands(bot) {
     await showAdminPanel(ctx);
   });
 
+  bot.command("cancel", async (ctx) => {
+    pendingActions.delete(ctx.from.id);
+    await ctx.reply("✅ Action cancelled.");
+  });
+
+  // Open admin panel.
   bot.callbackQuery("admin_panel", async (ctx) => {
     await ctx.answerCallbackQuery();
     await showAdminPanel(ctx, true);
   });
 
-  // Dashboard statistics.
+  // Dashboard.
   bot.callbackQuery("dashboard", async (ctx) => {
     await ctx.answerCallbackQuery();
 
     if (!(await allowed(ctx, "view_dashboard"))) {
-      return ctx.reply("⛔ Dashboard permission required.");
+      await ctx.reply("⛔ Dashboard permission required.");
+      return;
     }
 
     const result = await pool.query(`
@@ -190,26 +219,28 @@ export function registerCommands(bot) {
 
     await ctx.reply(
       "📊 ADVANCED DASHBOARD\n\n" +
-      `👥 Total users: ${stats.total_users}\n` +
-      `🆕 Joined today: ${stats.joined_today}\n` +
-      `🟢 Active today: ${stats.active_today}\n` +
-      `🛡️ Admins: ${admins.rows[0].count}\n\n` +
-      "📅 Today's statistics use the database server's date."
+        `👥 Total users: ${stats.total_users}\n` +
+        `🆕 Joined today: ${stats.joined_today}\n` +
+        `🟢 Active today: ${stats.active_today}\n` +
+        `🛡️ Admins: ${admins.rows[0].count}`
     );
   });
 
-  // User search.
+  // Search user.
   bot.callbackQuery("user_search", async (ctx) => {
     await ctx.answerCallbackQuery();
 
     if (!(await allowed(ctx, "view_users"))) {
-      return ctx.reply("⛔ User search permission required.");
+      await ctx.reply("⛔ User search permission required.");
+      return;
     }
 
     pendingActions.set(ctx.from.id, "user_search");
 
     await ctx.reply(
-      "👤 USER SEARCH\n\nSend the user's numeric Telegram ID.\n\nSend /cancel to stop."
+      "👤 USER SEARCH\n\n" +
+        "Send the user's numeric Telegram ID.\n\n" +
+        "Send /cancel to stop."
     );
   });
 
@@ -218,164 +249,473 @@ export function registerCommands(bot) {
     await ctx.answerCallbackQuery();
 
     if (!(await allowed(ctx, "broadcast"))) {
-      return ctx.reply("⛔ Broadcast permission required.");
+      await ctx.reply("⛔ Broadcast permission required.");
+      return;
     }
 
     pendingActions.set(ctx.from.id, "broadcast");
 
     await ctx.reply(
-      "📢 BROADCAST\n\nSend the announcement text you want to send to registered users.\n\nSend /cancel to stop."
+      "📢 BROADCAST\n\n" +
+        "Send the announcement text for registered users.\n\n" +
+        "Send /cancel to stop."
     );
   });
 
-  // Owner-only admin creation.
+  // Add admin.
   bot.callbackQuery("admin_add", async (ctx) => {
     await ctx.answerCallbackQuery();
 
     if (!isOwner(ctx)) {
-      return ctx.reply("⛔ Only the owner can add admins.");
+      await ctx.reply("⛔ Only the owner can add admins.");
+      return;
     }
 
     pendingActions.set(ctx.from.id, "admin_add");
 
     await ctx.reply(
-      "➕ Send the new admin's numeric Telegram ID.\n\nSend /cancel to stop."
+      "➕ Send the new admin's numeric Telegram ID.\n\n" +
+        "Send /cancel to stop."
     );
   });
 
+  // Remove admin.
   bot.callbackQuery("admin_remove", async (ctx) => {
     await ctx.answerCallbackQuery();
 
     if (!isOwner(ctx)) {
-      return ctx.reply("⛔ Only the owner can remove admins.");
+      await ctx.reply("⛔ Only the owner can remove admins.");
+      return;
     }
 
     pendingActions.set(ctx.from.id, "admin_remove");
 
     await ctx.reply(
-      "➖ Send the admin's Telegram ID to remove.\n\nSend /cancel to stop."
+      "➖ Send the admin's Telegram ID to remove.\n\n" +
+        "Send /cancel to stop."
     );
   });
 
+  // Change permissions.
   bot.callbackQuery("admin_permissions", async (ctx) => {
     await ctx.answerCallbackQuery();
 
     if (!isOwner(ctx)) {
-      return ctx.reply("⛔ Only the owner can change permissions.");
+      await ctx.reply("⛔ Only the owner can change permissions.");
+      return;
     }
 
     pendingActions.set(ctx.from.id, "admin_permissions");
 
     await ctx.reply(
       "🔐 CHANGE PERMISSIONS\n\n" +
-      "Send:\n" +
-      "TELEGRAM_ID PERMISSION on|off\n\n" +
-      "Available permissions:\n" +
-      "view_dashboard\n" +
-      "view_users\n" +
-      "broadcast\n\n" +
-      "Example:\n123456789 broadcast off\n\n" +
-      "Send /cancel to stop."
+        "Send: TELEGRAM_ID PERMISSION on|off\n\n" +
+        "Available permissions:\n" +
+        "view_dashboard\n" +
+        "view_users\n" +
+        "broadcast\n\n" +
+        "Example: 123456789 broadcast off\n\n" +
+        "Send /cancel to stop."
     );
   });
 
+  // Admin list.
   bot.callbackQuery("admin_list", async (ctx) => {
     await ctx.answerCallbackQuery();
 
     if (!isOwner(ctx)) {
-      return ctx.reply("⛔ Only the owner can view the admin list.");
+      await ctx.reply("⛔ Only the owner can view the admin list.");
+      return;
     }
 
     const result = await pool.query(
-      "SELECT telegram_id, permissions FROM bot_admins ORDER BY added_at DESC LIMIT 50"
+      `SELECT telegram_id, permissions
+       FROM bot_admins
+       ORDER BY added_at DESC
+       LIMIT 50`
     );
 
     if (!result.rowCount) {
-      return ctx.reply("No admins have been added yet.");
+      await ctx.reply("No admins have been added yet.");
+      return;
     }
 
-    const message = result.rows.map((admin) =>
-      `🛡️ ID: ${admin.telegram_id}\n` +
-      `Permissions: ${Object.entries(admin.permissions || {})
-        .filter(([, enabled]) => enabled === true)
-        .map(([key]) => key)
-        .join(", ") || "None"}`
-    ).join("\n\n");
+    const message = result.rows
+      .map((admin) => {
+        const enabled = Object.entries(
+          admin.permissions || {}
+        )
+          .filter(([, value]) => value === true)
+          .map(([key]) => key);
+
+        return (
+          `🛡️ ID: ${admin.telegram_id}\n` +
+          `Permissions: ${enabled.join(", ") || "None"}`
+        );
+      })
+      .join("\n\n");
 
     await ctx.reply("📋 ADMIN LIST\n\n" + message);
   });
 
-  // Process owner/admin text actions.
-  bot.command("cancel", async (ctx) => {
-    pendingActions.delete(ctx.from.id);
-    await ctx.reply("✅ Action cancelled.");
-  });
-
+  // Process pending text actions.
   bot.on("message:text", async (ctx, next) => {
     const action = pendingActions.get(ctx.from.id);
 
     if (!action || ctx.message.text.startsWith("/")) {
-      return next();
+      await next();
+      return;
     }
 
-    // Never let non-owners use owner-only actions.
+    // Owner-only actions.
     if (
-      ["admin_add", "admin_remove", "admin_permissions"].includes(action) &&
+      [
+        "admin_add",
+        "admin_remove",
+        "admin_permissions",
+      ].includes(action) &&
       !isOwner(ctx)
     ) {
       pendingActions.delete(ctx.from.id);
-      return ctx.reply("⛔ Only the owner can perform this action.");
+      await ctx.reply("⛔ Only the owner can perform this action.");
+      return;
     }
 
+    // Search registered user.
     if (action === "user_search") {
       if (!(await allowed(ctx, "view_users"))) {
         pendingActions.delete(ctx.from.id);
-        return ctx.reply("⛔ Permission denied.");
+        await ctx.reply("⛔ Permission denied.");
+        return;
       }
 
       const id = ctx.message.text.trim();
 
-      if (!/^\d+$/.test(id)) {
-        return ctx.reply("Enter a numeric Telegram ID, or /cancel.");
+      if (!validTelegramId(id)) {
+        await ctx.reply(
+          "Enter a valid numeric Telegram ID, or /cancel."
+        );
+        return;
       }
 
       const result = await pool.query(
         `SELECT telegram_id, username, first_name, first_seen, last_seen
-         FROM bot_users WHERE telegram_id = $1`,
+         FROM bot_users
+         WHERE telegram_id = $1`,
         [id]
       );
 
       pendingActions.delete(ctx.from.id);
 
       if (!result.rowCount) {
-        return ctx.reply("❌ User not found.");
+        await ctx.reply("❌ User not found.");
+        return;
       }
 
       const user = result.rows[0];
 
-      return ctx.reply(
+      await ctx.reply(
         "👤 USER INFORMATION\n\n" +
-        `ID: ${user.telegram_id}\n` +
-        `Name: ${user.first_name}\n` +
-        `Username: ${user.username ? "@" + user.username : "Not set"}\n` +
-        `First seen: ${new Date(user.first_seen).toLocaleString()}\n` +
-        `Last active: ${new Date(user.last_seen).toLocaleString()}`
+          `ID: ${user.telegram_id}\n` +
+          `Name: ${user.first_name}\n` +
+          `Username: ${
+            user.username ? "@" + user.username : "Not set"
+          }\n` +
+          `First seen: ${new Date(
+            user.first_seen
+          ).toLocaleString()}\n` +
+          `Last active: ${new Date(
+            user.last_seen
+          ).toLocaleString()}`
       );
+
+      return;
     }
 
+    // Add admin.
     if (action === "admin_add") {
       const id = ctx.message.text.trim();
 
-      if (!/^\d+$/.test(id)) {
-        return ctx.reply("Enter a numeric Telegram ID, or /cancel.");
+      if (!validTelegramId(id)) {
+        await ctx.reply(
+          "Enter a valid numeric Telegram ID, or /cancel."
+        );
+        return;
       }
 
       if (id === OWNER_ID) {
         pendingActions.delete(ctx.from.id);
-        return ctx.reply("The owner is already protected.");
+        await ctx.reply("The owner is already protected.");
+        return;
       }
 
+      const result = await pool.query(
+        `INSERT INTO bot_admins (telegram_id, permissions)
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (telegram_id) DO NOTHING
+         RETURNING telegram_id`,
+        [
+          id,
+          JSON.stringify({
+            view_dashboard: true,
+            view_users: true,
+            broadcast: false,
+          }),
+        ]
+      );
+
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        result.rowCount
+          ? `✅ Admin ${id} added with default permissions.`
+          : `ℹ️ ${id} is already an admin.`
+      );
+
+      return;
+    }
+
+    // Remove admin.
+    if (action === "admin_remove") {
+      const id = ctx.message.text.trim();
+
+      if (!validTelegramId(id)) {
+        await ctx.reply(
+          "Enter a valid numeric Telegram ID, or /cancel."
+        );
+        return;
+      }
+
+      if (id === OWNER_ID) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply("⛔ The owner cannot be removed.");
+        return;
+      }
+
+      const result = await pool.query(
+        `DELETE FROM bot_admins
+         WHERE telegram_id = $1
+         RETURNING telegram_id`,
+        [id]
+      );
+
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        result.rowCount
+          ? `✅ Admin ${id} removed.`
+          : "That ID is not an admin."
+      );
+
+      return;
+    }
+
+    // Update admin permission.
+    if (action === "admin_permissions") {
+      const [id, permission, value] =
+        ctx.message.text.trim().split(/\s+/);
+
+      if (
+        !validTelegramId(id || "") ||
+        !Object.hasOwn(PERMISSIONS, permission) ||
+        !["on", "off"].includes(value)
+      ) {
+        await ctx.reply(
+          "Invalid format.\n" +
+            "Example: 123456789 broadcast off\n\n" +
+            "Try again or /cancel."
+        );
+        return;
+      }
+
+      if (id === OWNER_ID) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply(
+          "⛔ Owner permissions cannot be changed."
+        );
+        return;
+      }
+
+      const existing = await pool.query(
+        "SELECT permissions FROM bot_admins WHERE telegram_id = $1",
+        [id]
+      );
+
+      if (!existing.rowCount) {
+        await ctx.reply(
+          "That ID is not an admin. Try again or /cancel."
+        );
+        return;
+      }
+
+      const permissions = {
+        ...existing.rows[0].permissions,
+        [permission]: value === "on",
+      };
+
       await pool.query(
+        `UPDATE bot_admins
+         SET permissions = $1::jsonb
+         WHERE telegram_id = $2`,
+        [JSON.stringify(permissions), id]
+      );
+
+      pendingActions.delete(ctx.from.id);
+
+      await ctx.reply(
+        `✅ Permission updated.\nAdmin: ${id}\n${permission}: ${value}`
+      );
+
+      return;
+    }
+
+    // Send broadcast.
+    if (action === "broadcast") {
+      if (!(await allowed(ctx, "broadcast"))) {
+        pendingActions.delete(ctx.from.id);
+        await ctx.reply("⛔ Permission denied.");
+        return;
+      }
+
+      const message = ctx.message.text.trim();
+
+      if (!message) {
+        await ctx.reply(
+          "Message cannot be empty. Or /cancel."
+        );
+        return;
+      }
+
+      pendingActions.delete(ctx.from.id);
+
+      const users = await pool.query(
+        "SELECT telegram_id FROM bot_users"
+      );
+
+      let sent = 0;
+      let failed = 0;
+
+      await ctx.reply(
+        `📢 Sending to ${users.rowCount} registered users...`
+      );
+
+      for (const user of users.rows) {
+        try {
+          await bot.api.sendMessage(
+            user.telegram_id,
+            message
+          );
+          sent++;
+        } catch (error) {
+          failed++;
+          console.error(
+            "[broadcast] Send failed:",
+            user.telegram_id,
+            error.message
+          );
+        }
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, 50)
+        );
+      }
+
+      await ctx.reply(
+        "📢 BROADCAST COMPLETE\n\n" +
+          `✅ Sent: ${sent}\n` +
+          `❌ Failed: ${failed}`
+      );
+
+      return;
+    }
+
+    pendingActions.delete(ctx.from.id);
+    await next();
+  });
+
+  // Recovery email.
+  bot.callbackQuery("recovery", async (ctx) => {
+    await ctx.answerCallbackQuery();
+
+    await ctx.editMessageText(
+      "📧 RECOVERY EMAIL\n\n" +
+        "Manage your recovery email through the official game's settings.\n\n" +
+        "🔐 Never share your password, OTP, or access token.",
+      {
+        reply_markup: new InlineKeyboard()
+          .text("📖 Instructions", "instructions")
+          .row()
+          .text("⬅️ Main Menu", "home"),
+      }
+    );
+  });
+
+  // Instructions.
+  bot.callbackQuery("instructions", async (ctx) => {
+    await ctx.answerCallbackQuery();
+
+    await ctx.editMessageText(
+      "📖 INSTRUCTIONS\n\n" +
+        "1. Open Free Fire.\n" +
+        "2. Open Settings → Account & Basic.\n" +
+        "3. Check the available recovery options.\n" +
+        "4. Follow the official verification steps.",
+      {
+        reply_markup: new InlineKeyboard()
+          .text("⬅️ Main Menu", "home"),
+      }
+    );
+  });
+
+  // Account management.
+  bot.callbackQuery("account", async (ctx) => {
+    await ctx.answerCallbackQuery();
+
+    await ctx.editMessageText(
+      "🎮 ACCOUNT MANAGEMENT\n\n" +
+        "Manage your account through official game settings.\n\n" +
+        "This bot does not modify game account details.\n\n" +
+        "🔐 Never share passwords, OTPs, or access tokens.",
+      {
+        reply_markup: new InlineKeyboard()
+          .text("⬅️ Main Menu", "home"),
+      }
+    );
+  });
+
+  // Help menu.
+  bot.callbackQuery("help", async (ctx) => {
+    await ctx.answerCallbackQuery();
+
+    await ctx.editMessageText(
+      "ℹ️ HELP\n\n" +
+        "/start — Main menu\n" +
+        "/help — Help\n" +
+        "/ping — Bot status\n" +
+        "/admin — Admin panel\n" +
+        "/cancel — Cancel an active action\n\n" +
+        "Never share passwords, OTPs, or access tokens.",
+      {
+        reply_markup: new InlineKeyboard()
+          .text("⬅️ Main Menu", "home"),
+      }
+    );
+  });
+
+  // Return to main menu.
+  bot.callbackQuery("home", async (ctx) => {
+    await ctx.answerCallbackQuery();
+
+    const admin = await getAdmin(ctx);
+
+    await ctx.editMessageText(
+      "🔥 FF ACCOUNT MANAGER 🔥\n\nChoose an option below 👇",
+      {
+        reply_markup: mainMenu(admin.isAdmin),
+      }
+    );
+  });
+  }  await pool.query(
         `INSERT INTO bot_admins (telegram_id, permissions)
          VALUES ($1, $2::jsonb)
          ON CONFLICT (telegram_id) DO NOTHING`,
