@@ -231,7 +231,22 @@ export function registerCommands(bot) {
       { reply_markup: mainMenu(admin.isAdmin) },
     );
   });
+// Help button
+bot.callbackQuery("help", async (ctx) => {
+await ctx.answerCallbackQuery();
 
+await ctx.editMessageText(
+  "ℹ️ HELP\n\n" +
+    "/start — Main menu\n" +
+    "/help — Help\n" +
+    "/ping — Bot status\n" +
+    "/admin — Admin panel\n" +
+    "/cancel — Cancel an active action\n\n" +
+    "🔐 Never share passwords, OTPs, or access tokens.",
+  { reply_markup: backMenu() },
+);
+
+});
   // FF Tools
   bot.callbackQuery("ff_tools", async (ctx) => {
     await ctx.answerCallbackQuery();
