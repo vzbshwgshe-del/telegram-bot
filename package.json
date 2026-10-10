@@ -1,18 +1,15 @@
 {
-  "name": "fadehost-telegram-starter-bot",
-  "version": "1.0.0",
-  "description": "FF Account Manager Telegram Bot",
+  "name": "ff-account-manager",
+  "version": "2.0.0",
   "type": "module",
+  "description": "Free Fire Account Manager Telegram Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
   "dependencies": {
-    "grammy": "^1.30.0",
+    "dotenv": "^16.4.7",
+    "grammy": "^1.35.0",
     "pg": "^8.13.1"
-  },
-  "license": "MIT"
+  }
 }
