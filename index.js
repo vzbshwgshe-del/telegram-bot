@@ -51,7 +51,3 @@ async function shutdown() {
 
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
-// Compatibility with index.js
-export async function registerCommands(bot) {
-  registerCommandHandlers(bot);
-}
