@@ -1,4 +1,4 @@
-module.exports = function (bot) {
+export function registerCommands(bot) {
     bot.command("start", async (ctx) => {
         const user = ctx.from.username
             ? "@" + ctx.from.username
@@ -24,37 +24,37 @@ module.exports = function (bot) {
 
 👇 Select an option from below:`;
 
-        const keyboard = {
+        const keyboard = [
+            [
+                { text: "Bind Info" },
+                { text: "Bind Email" }
+            ],
+            [
+                { text: "Unbind Email" },
+                { text: "Change Email" }
+            ],
+            [
+                { text: "Cancel Bind" },
+                { text: "EAT to Token" }
+            ],
+            [
+                { text: "Revoke Token" },
+                { text: "How to Use" }
+            ],
+            [
+                { text: "Update Bio" },
+                { text: "Get EAT" }
+            ],
+            [
+                { text: "Send Single Unsubscribe Otp" }
+            ]
+        ];
+
+        await ctx.reply(message, {
             reply_markup: {
-                keyboard: [
-                    [
-                        { text: "Bind Info" },
-                        { text: "Bind Email" }
-                    ],
-                    [
-                        { text: "Unbind Email" },
-                        { text: "Change Email" }
-                    ],
-                    [
-                        { text: "Cancel Bind" },
-                        { text: "EAT to Token" }
-                    ],
-                    [
-                        { text: "Revoke Token" },
-                        { text: "How to Use" }
-                    ],
-                    [
-                        { text: "Update Bio" },
-                        { text: "Get EAT" }
-                    ],
-                    [
-                        { text: "Send Single Unsubscribe Otp" }
-                    ]
-                ],
+                keyboard,
                 resize_keyboard: true
             }
-        };
-
-        await ctx.reply(message, keyboard);
+        });
     });
-};
+}
