@@ -234,3 +234,7 @@ export function registerCommandHandlers(bot) {
     await handleHelp(ctx);
   });
 }
+// Compatibility with index.js
+export function registerCommands(bot) {
+  registerCommandHandlers(bot);
+}
