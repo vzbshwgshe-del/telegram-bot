@@ -1,931 +1,236 @@
 import { InlineKeyboard } from "grammy";
 import { pool } from "./database.js";
 
-const OWNER_ID = "6683322520";
-
-const PERMISSIONS = {
-  view_dashboard: "View dashboard",
-  view_users: "View user information",
-  broadcast: "Send broadcasts",
-};
-
-const pendingActions = new Map();
-
-function isOwner(ctx) {
-  return String(ctx.from?.id) === OWNER_ID;
-}
-
-function mainMenu(isAdmin = false) {
+// Main Menu
+export function mainMenu(isAdmin = false) {
   const keyboard = new InlineKeyboard()
-    .text("🧰 FF Tools", "ff_tools")
+    .text("🔍 Profile Checker", "player_stats")
     .row()
-    .text("👤 Player Stats", "player_stats")
-    .row()
-    .text("🔐 Account Tools", "account_tools")
-    .row()
-    .text("🎫 Developer Support", "support")
+    .text("👤 Account Related", "account_tools")
     .row()
     .text("ℹ️ Help", "help");
 
   if (isAdmin) {
-    keyboard.row().text("👑 Admin Panel", "admin_panel");
+    keyboard.row().text("🛠️ Admin Panel", "admin_panel");
   }
 
   return keyboard;
 }
 
-function backMenu() {
-  return new InlineKeyboard().text("⬅️ Main Menu", "home");
+// Account Related Menu
+export function accountRelatedMenu() {
+  return new InlineKeyboard()
+    .text("📧 Bind Email", "bind_email")
+    .row()
+    .text("🔄 Change Bind Email", "change_bind_email")
+    .row()
+    .text("❌ Remove Bind Email", "remove_bind_email")
+    .row()
+    .text("🚫 Account Unban", "account_unban")
+    .row()
+    .text("🔒 Account Ban", "account_ban")
+    .row()
+    .text("⬅️ Main Menu", "home");
 }
 
-async function getAdmin(ctx) {
-  if (isOwner(ctx)) {
-    return {
-      isAdmin: true,
-      permissions: Object.fromEntries(
-        Object.keys(PERMISSIONS).map((key) => [key, true]),
-      ),
-    };
+// Check whether a user is an admin
+async function isAdmin(userId) {
+  try {
+    const result = await pool.query(
+      "SELECT user_id FROM bot_admins WHERE user_id = $1",
+      [String(userId)]
+    );
+
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error("Admin check failed:", error);
+    return false;
   }
-
-  const result = await pool.query(
-    "SELECT permissions FROM bot_admins WHERE telegram_id = $1",
-    [String(ctx.from.id)],
-  );
-
-  if (!result.rowCount) {
-    return { isAdmin: false, permissions: {} };
-  }
-
-  return {
-    isAdmin: true,
-    permissions: result.rows[0].permissions || {},
-  };
 }
 
-async function allowed(ctx, permission) {
-  const admin = await getAdmin(ctx);
-  return admin.isAdmin && admin.permissions[permission] === true;
-}
+// Home / Main Menu
+export async function handleHome(ctx) {
+  const userId = ctx.from?.id;
 
-async function showAdminPanel(ctx, edit = false) {
-  const admin = await getAdmin(ctx);
-
-  if (!admin.isAdmin) {
-    const message = "⛔ You are not authorized.";
-    if (edit) await ctx.editMessageText(message);
-    else await ctx.reply(message);
+  if (!userId) {
     return;
   }
 
-  const keyboard = new InlineKeyboard();
+  const admin = await isAdmin(userId);
 
-  if (admin.permissions.view_dashboard) {
-    keyboard.text("📊 Dashboard", "dashboard");
-  }
-
-  if (admin.permissions.view_users) {
-    keyboard.text("👤 Search User", "user_search");
-  }
-
-  if (admin.permissions.broadcast) {
-    keyboard.row().text("📢 Broadcast", "broadcast");
-  }
-
-  if (isOwner(ctx)) {
-    keyboard
-      .row()
-      .text("➕ Add Admin", "admin_add")
-      .text("➖ Remove Admin", "admin_remove")
-      .row()
-      .text("🔐 Permissions", "admin_permissions")
-      .row()
-      .text("📋 Admin List", "admin_list");
-  }
-
-  keyboard.row().text("⬅️ Main Menu", "home");
-
-  const message = "👑 ADMIN PANEL\n\nSelect an option:";
-
-  if (edit) {
-    await ctx.editMessageText(message, { reply_markup: keyboard });
-  } else {
-    await ctx.reply(message, { reply_markup: keyboard });
-  }
-}
-
-function validTelegramId(value) {
-  return /^\d{5,20}$/.test(value);
-}
-
-function ffToolsMenu() {
-  return new InlineKeyboard()
-    .text("🎯 Sensitivity Settings", "sensitivity")
-    .row()
-    .text("📱 Custom HUD Guide", "hud")
-    .row()
-    .text("⚙️ DPI Guide", "dpi")
-    .row()
-    .text("🏆 Rank Push Guide", "rank_push")
-    .row()
-    .text("✨ Name & Symbols", "name_symbols")
-    .row()
-    .text("🎮 Gameplay Tips", "gameplay")
-    .row()
-    .text("⬅️ Main Menu", "home");
-}
-
-function accountToolsMenu() {
-  return new InlineKeyboard()
-    .text("📧 Recovery Email", "recovery")
-    .row()
-    .text("🔗 Account Binding", "binding")
-    .row()
-    .text("🛡️ Account Security", "security")
-    .row()
-    .text("🔧 Troubleshooting", "troubleshooting")
-    .row()
-    .text("🔐 Authorization & Privacy", "authorization")
-    .row()
-    .text("⬅️ Main Menu", "home");
-}
-
-export function registerCommands(bot) {
-  // Save normal Telegram user information only.
-  bot.use(async (ctx, next) => {
-    if (ctx.from && !ctx.from.is_bot) {
-      try {
-        await pool.query(
-          `INSERT INTO bot_users
-            (telegram_id, username, first_name, first_seen, last_seen)
-           VALUES ($1, $2, $3, NOW(), NOW())
-           ON CONFLICT (telegram_id)
-           DO UPDATE SET
-             username = EXCLUDED.username,
-             first_name = EXCLUDED.first_name,
-             last_seen = NOW()`,
-          [
-            String(ctx.from.id),
-            ctx.from.username || null,
-            ctx.from.first_name || "Unknown",
-          ],
-        );
-      } catch (error) {
-        console.error("[users] Save failed:", error.message);
-      }
+  await ctx.reply(
+    "🏠 Welcome!\n\nChoose an option below:",
+    {
+      reply_markup: mainMenu(admin),
     }
+  );
+}
 
-    await next();
-  });
+// Profile Checker
+export async function handlePlayerStats(ctx) {
+  await ctx.reply(
+    "🔍 Profile Checker\n\n" +
+      "This feature is not configured yet.\n\n" +
+      "To check player profiles, an authorized and supported stats API must be connected.\n\n" +
+      "⚠️ No player statistics will be displayed until the API is configured.",
+    {
+      reply_markup: new InlineKeyboard()
+        .text("⬅️ Main Menu", "home"),
+    }
+  );
+}
 
-  // Basic commands
-  bot.command("start", async (ctx) => {
-    const admin = await getAdmin(ctx);
+// Account Related
+export async function handleAccountTools(ctx) {
+  await ctx.reply(
+    "👤 Account Related\n\n" +
+      "Choose an account-related option below.\n\n" +
+      "Note: These actions are not automated yet.",
+    {
+      reply_markup: accountRelatedMenu(),
+    }
+  );
+}
 
-    await ctx.reply(
-      `🔥 FF ACCOUNT MANAGER 🔥\n\nWelcome, ${
-        ctx.from.first_name || "Player"
-      }!\n\nChoose an option below 👇`,
-      { reply_markup: mainMenu(admin.isAdmin) },
-    );
-  });
+// Bind Email
+export async function handleBindEmail(ctx) {
+  await ctx.reply(
+    "📧 Bind Email\n\n" +
+      "To bind an email, open your game's official settings and follow its account-binding instructions.\n\n" +
+      "🔐 Security Reminder:\n" +
+      "Never share your password, OTP, or login token with anyone.",
+    {
+      reply_markup: new InlineKeyboard()
+        .text("⬅️ Account Related", "account_tools")
+        .row()
+        .text("🏠 Main Menu", "home"),
+    }
+  );
+}
 
-  bot.command("help", async (ctx) => {
-    await ctx.reply(
-      "ℹ️ HELP\n\n" +
-        "/start — Main menu\n" +
-        "/help — Help\n" +
-        "/ping — Bot status\n" +
-        "/admin — Admin panel\n" +
-        "/cancel — Cancel an active action\n\n" +
-        "🔐 Never share passwords, OTPs, or access tokens.",
-      { reply_markup: backMenu() },
-    );
-  });
+// Change Bind Email
+export async function handleChangeBindEmail(ctx) {
+  await ctx.reply(
+    "🔄 Change Bind Email\n\n" +
+      "This feature is coming soon.\n\n" +
+      "It requires a supported, authorized account-management API. Until then, use the game's official account settings or support service.",
+    {
+      reply_markup: new InlineKeyboard()
+        .text("⬅️ Account Related", "account_tools")
+        .row()
+        .text("🏠 Main Menu", "home"),
+    }
+  );
+}
 
-  bot.command("ping", async (ctx) => {
-    await ctx.reply("✅ FF Account Manager is online!");
-  });
+// Remove Bind Email
+export async function handleRemoveBindEmail(ctx) {
+  await ctx.reply(
+    "❌ Remove Bind Email\n\n" +
+      "This feature is coming soon.\n\n" +
+      "Email removal must be supported by the game's official account-management system. Please use the official settings or support service.",
+    {
+      reply_markup: new InlineKeyboard()
+        .text("⬅️ Account Related", "account_tools")
+        .row()
+        .text("🏠 Main Menu", "home"),
+    }
+  );
+}
 
-  bot.command("admin", async (ctx) => {
-    await showAdminPanel(ctx);
-  });
+// Account Unban
+export async function handleAccountUnban(ctx) {
+  await ctx.reply(
+    "🚫 Account Unban\n\n" +
+      "This feature is coming soon.\n\n" +
+      "If your account has been banned, submit an appeal through the game's official support service.\n\n" +
+      "⚠️ No unban action is performed by this bot.",
+    {
+      reply_markup: new InlineKeyboard()
+        .text("⬅️ Account Related", "account_tools")
+        .row()
+        .text("🏠 Main Menu", "home"),
+    }
+  );
+}
 
-  bot.command("cancel", async (ctx) => {
-    pendingActions.delete(ctx.from.id);
-    await ctx.reply("✅ Action cancelled.", {
-      reply_markup: backMenu(),
-    });
-  });
+// Account Ban
+export async function handleAccountBan(ctx) {
+  await ctx.reply(
+    "🔒 Account Ban\n\n" +
+      "This feature is not implemented.\n\n" +
+      "The bot cannot ban or modify game accounts.",
+    {
+      reply_markup: new InlineKeyboard()
+        .text("⬅️ Account Related", "account_tools")
+        .row()
+        .text("🏠 Main Menu", "home"),
+    }
+  );
+}
 
-  // Main menu
+// Help
+export async function handleHelp(ctx) {
+  await ctx.reply(
+    "ℹ️ Help\n\n" +
+      "🔍 Profile Checker — Check player profiles when an authorized stats API is configured.\n\n" +
+      "👤 Account Related — View email-binding and account-support options.\n\n" +
+      "🛠️ Admin Panel — Available to authorized bot administrators.\n\n" +
+      "🔐 Never share your passwords, OTPs, or login tokens.",
+    {
+      reply_markup: new InlineKeyboard()
+        .text("🏠 Main Menu", "home"),
+    }
+  );
+}
+
+// Register command and callback handlers
+export function registerCommandHandlers(bot) {
+  bot.command("start", handleHome);
+  bot.command("menu", handleHome);
+
   bot.callbackQuery("home", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    pendingActions.delete(ctx.from.id);
-
-    const admin = await getAdmin(ctx);
-
-    await ctx.editMessageText(
-      "🔥 FF ACCOUNT MANAGER 🔥\n\nChoose an option below 👇",
-      { reply_markup: mainMenu(admin.isAdmin) },
-    );
-  });
-// Help button
-bot.callbackQuery("help", async (ctx) => {
-await ctx.answerCallbackQuery();
-
-await ctx.editMessageText(
-  "ℹ️ HELP\n\n" +
-    "/start — Main menu\n" +
-    "/help — Help\n" +
-    "/ping — Bot status\n" +
-    "/admin — Admin panel\n" +
-    "/cancel — Cancel an active action\n\n" +
-    "🔐 Never share passwords, OTPs, or access tokens.",
-  { reply_markup: backMenu() },
-);
-
-});
-  // FF Tools
-  bot.callbackQuery("ff_tools", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🧰 FREE FIRE TOOLS\n\nChoose a tool:",
-      { reply_markup: ffToolsMenu() },
-    );
+    await handleHome(ctx);
   });
 
-  bot.callbackQuery("sensitivity", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🎯 SENSITIVITY SETTINGS\n\n" +
-        "Try these as starting values, then adjust for your device:\n\n" +
-        "General: 90–100\n" +
-        "Red Dot: 85–95\n" +
-        "2x Scope: 75–85\n" +
-        "4x Scope: 65–80\n" +
-        "Sniper Scope: 30–50\n" +
-        "Free Look: 70–85\n\n" +
-        "These are suggested starting ranges, not guaranteed best settings.",
-      { reply_markup: ffToolsMenu() },
-    );
-  });
-
-  bot.callbackQuery("hud", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "📱 CUSTOM HUD GUIDE\n\n" +
-        "1. Open Free Fire Settings.\n" +
-        "2. Select Controls and Custom HUD.\n" +
-        "3. Place the fire button where your thumb can reach it easily.\n" +
-        "4. Keep jump, crouch, and prone buttons comfortably accessible.\n" +
-        "5. Adjust button size and transparency.\n" +
-        "6. Practise in Training Mode before ranked matches.\n\n" +
-        "Tip: Change one setting at a time.",
-      { reply_markup: ffToolsMenu() },
-    );
-  });
-
-  bot.callbackQuery("dpi", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "⚙️ DPI GUIDE\n\n" +
-        "DPI affects the Android interface and touch feel; it is not a universal Free Fire sensitivity setting.\n\n" +
-        "• Keep your current DPI if your phone works well.\n" +
-        "• Changing DPI may make text and interface elements smaller.\n" +
-        "• Record your original setting before changing it.\n" +
-        "• Avoid extreme values and use your phone's supported settings.\n\n" +
-        "You do not need to change DPI to improve your aim.",
-      { reply_markup: ffToolsMenu() },
-    );
-  });
-
-  bot.callbackQuery("rank_push", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🏆 RANK PUSH GUIDE\n\n" +
-        "1. Play with teammates you trust.\n" +
-        "2. Choose landing locations based on your skill level.\n" +
-        "3. Collect supplies before taking unnecessary fights.\n" +
-        "4. Use cover and communicate enemy positions.\n" +
-        "5. Avoid rushing alone.\n" +
-        "6. Review mistakes after each match.\n" +
-        "7. Take a break after several frustrating losses.\n\n" +
-        "Play fairly and never use cheats or account exploits.",
-      { reply_markup: ffToolsMenu() },
-    );
-  });
-
-  bot.callbackQuery("name_symbols", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "✨ NAME & SYMBOLS GENERATOR\n\n" +
-        "Choose a sample style, or send /name followed by your name.\n\n" +
-        "Examples:\n" +
-        "亗Shadow亗\n" +
-        "꧁༒King༒꧂\n" +
-        "乂Legend乂\n" +
-        "『Pro』Player\n" +
-        "★彡Sniper彡★\n\n" +
-        "Copy a style and replace the sample name.\n\n" +
-        "Symbols:\n" +
-        "亗 乂 ꧁ ꧂ 『 』 彡 ★ ☆ 么 ツ 々",
-      { reply_markup: new InlineKeyboard()
-        .text("✍️ Generate My Name", "generate_name")
-        .row()
-        .text("⬅️ FF Tools", "ff_tools")
-      },
-    );
-  });
-
-  bot.callbackQuery("generate_name", async (ctx) => {
-    await ctx.answerCallbackQuery();
-    pendingActions.set(ctx.from.id, "generate_name");
-
-    await ctx.reply(
-      "✍️ Send the name you want to style.\n\nSend /cancel to stop.",
-    );
-  });
-
-  bot.callbackQuery("gameplay", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🎮 GAMEPLAY TIPS\n\n" +
-        "• Practise tracking and flicking in Training Mode.\n" +
-        "• Use headphones to identify nearby sounds.\n" +
-        "• Learn when to use cover instead of open ground.\n" +
-        "• Keep sensitivity comfortable and consistent.\n" +
-        "• Communicate with your squad.\n" +
-        "• Avoid unofficial tools that request account credentials.",
-      { reply_markup: ffToolsMenu() },
-    );
-  });
-
-  // Player Stats
   bot.callbackQuery("player_stats", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "👤 PLAYER STATS\n\n" +
-        "Choose your Free Fire server.\n\n" +
-        "Note: Live statistics require a compatible, legitimate stats API. " +
-        "This bot will not invent player statistics.",
-      {
-        reply_markup: new InlineKeyboard()
-          .text("🇮🇳 India", "server_india")
-          .text("🇧🇷 Brazil", "server_brazil")
-          .row()
-          .text("🇮🇩 Indonesia", "server_indonesia")
-          .text("🇹🇭 Thailand", "server_thailand")
-          .row()
-          .text("🇻🇳 Vietnam", "server_vietnam")
-          .text("🇲🇾 Malaysia", "server_malaysia")
-          .row()
-          .text("🇸🇬 Singapore", "server_singapore")
-          .text("🇹🇼 Taiwan", "server_taiwan")
-          .row()
-          .text("🇷🇺 Russia", "server_russia")
-          .row()
-          .text("🌐 Other / Global", "server_global")
-          .row()
-          .text("⬅️ Main Menu", "home"),
-      },
-    );
+    await handlePlayerStats(ctx);
   });
 
-  const servers = [
-    "india",
-    "brazil",
-    "indonesia",
-    "thailand",
-    "vietnam",
-    "malaysia",
-    "singapore",
-    "taiwan",
-    "russia",
-    "global",
-  ];
-
-  for (const server of servers) {
-    bot.callbackQuery(`server_${server}`, async (ctx) => {
-      await ctx.answerCallbackQuery();
-
-      pendingActions.set(ctx.from.id, `player_uid:${server}`);
-
-      await ctx.reply(
-        `👤 PLAYER STATS — ${server.toUpperCase()}\n\n` +
-          "Send the player's numeric Free Fire UID.\n\n" +
-          "No live stats API is configured in this version, so the bot will collect the UID but will not fabricate statistics.\n\n" +
-          "Send /cancel to stop.",
-      );
-    });
-  }
-
-  // Account Tools
   bot.callbackQuery("account_tools", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🔐 ACCOUNT TOOLS\n\nChoose the help you need:",
-      { reply_markup: accountToolsMenu() },
-    );
+    await handleAccountTools(ctx);
   });
 
-  bot.callbackQuery("recovery", async (ctx) => {
+  bot.callbackQuery("bind_email", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "📧 RECOVERY EMAIL HELP\n\n" +
-        "Use the official game account settings and recovery process.\n\n" +
-        "1. Open the game.\n" +
-        "2. Open Settings → Account.\n" +
-        "3. Review available binding and recovery options.\n" +
-        "4. Follow official verification instructions.\n\n" +
-        "Never share your password, OTP, or access token.",
-      { reply_markup: accountToolsMenu() },
-    );
+    await handleBindEmail(ctx);
   });
 
-  bot.callbackQuery("binding", async (ctx) => {
+  bot.callbackQuery("change_bind_email", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🔗 ACCOUNT BINDING GUIDE\n\n" +
-        "• Open the game's official account settings.\n" +
-        "• Review the available linked-account options.\n" +
-        "• Bind only accounts that you own and control.\n" +
-        "• Never give a third party your login credentials.\n" +
-        "• Contact official support if binding fails.",
-      { reply_markup: accountToolsMenu() },
-    );
+    await handleChangeBindEmail(ctx);
   });
 
-  bot.callbackQuery("security", async (ctx) => {
+  bot.callbackQuery("remove_bind_email", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🛡️ ACCOUNT SECURITY\n\n" +
-        "• Never share passwords or OTPs.\n" +
-        "• Do not paste access tokens into public chats.\n" +
-        "• Use strong security on linked accounts.\n" +
-        "• Review account activity when possible.\n" +
-        "• Avoid unofficial login pages and suspicious apps.\n" +
-        "• Contact official support if you suspect compromise.",
-      { reply_markup: accountToolsMenu() },
-    );
+    await handleRemoveBindEmail(ctx);
   });
 
-  bot.callbackQuery("troubleshooting", async (ctx) => {
+  bot.callbackQuery("account_unban", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🔧 ACCOUNT TROUBLESHOOTING\n\n" +
-        "For faster help, note:\n" +
-        "1. Your Free Fire UID.\n" +
-        "2. Your server or region.\n" +
-        "3. The exact error message.\n" +
-        "4. When the problem began.\n" +
-        "5. What troubleshooting steps you tried.\n\n" +
-        "Do not send passwords, OTPs, or raw access tokens.",
-      { reply_markup: accountToolsMenu() },
-    );
+    await handleAccountUnban(ctx);
   });
 
-  bot.callbackQuery("authorization", async (ctx) => {
+  bot.callbackQuery("account_ban", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    await ctx.editMessageText(
-      "🔐 AUTHORIZATION & PRIVACY NOTICE\n\n" +
-        "Some account support features may require an official authorization method.\n\n" +
-        "• Your consent must be explicit.\n" +
-        "• Do not submit passwords, OTPs, or raw access tokens to this bot.\n" +
-        "• Diagnostic records may be retained for up to 30 days when needed for support.\n" +
-        "• Diagnostic records should exclude secret credentials.\n" +
-        "• You may cancel before submitting information.\n\n" +
-        "This version does not collect or store raw access tokens.",
-      { reply_markup: accountToolsMenu() },
-    );
+    await handleAccountBan(ctx);
   });
 
-  // Developer support: collect non-secret diagnostic details only.
-  bot.callbackQuery("support", async (ctx) => {
+  bot.callbackQuery("help", async (ctx) => {
     await ctx.answerCallbackQuery();
-
-    pendingActions.set(ctx.from.id, "support");
-
-    await ctx.reply(
-      "🎫 DEVELOPER SUPPORT\n\n" +
-        "Describe your issue, including the error message if possible.\n\n" +
-        "Do not include passwords, OTPs, or access tokens.\n\n" +
-        "Send /cancel to stop.",
-    );
-  });
-
-  // Admin dashboard
-  bot.callbackQuery("admin_panel", async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await showAdminPanel(ctx, true);
-  });
-
-  bot.callbackQuery("dashboard", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    if (!(await allowed(ctx, "view_dashboard"))) {
-      await ctx.reply("⛔ Dashboard permission required.");
-      return;
-    }
-
-    const result = await pool.query(`
-      SELECT
-        COUNT(*) AS total_users,
-        COUNT(*) FILTER (WHERE first_seen >= CURRENT_DATE) AS joined_today,
-        COUNT(*) FILTER (WHERE last_seen >= CURRENT_DATE) AS active_today
-      FROM bot_users
-    `);
-
-    const admins = await pool.query("SELECT COUNT(*) FROM bot_admins");
-    const stats = result.rows[0];
-
-    await ctx.reply(
-      "📊 ADVANCED DASHBOARD\n\n" +
-        `👥 Total users: ${stats.total_users}\n` +
-        `🆕 Joined today: ${stats.joined_today}\n` +
-        `🟢 Active today: ${stats.active_today}\n` +
-        `🛡️ Admins: ${admins.rows[0].count}`,
-    );
-  });
-
-  bot.callbackQuery("user_search", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    if (!(await allowed(ctx, "view_users"))) {
-      await ctx.reply("⛔ User search permission required.");
-      return;
-    }
-
-    pendingActions.set(ctx.from.id, "user_search");
-
-    await ctx.reply(
-      "👤 USER SEARCH\n\nSend the user's numeric Telegram ID.\n\nSend /cancel to stop.",
-    );
-  });
-
-  bot.callbackQuery("broadcast", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    if (!(await allowed(ctx, "broadcast"))) {
-      await ctx.reply("⛔ Broadcast permission required.");
-      return;
-    }
-
-    pendingActions.set(ctx.from.id, "broadcast");
-
-    await ctx.reply(
-      "📢 BROADCAST\n\nSend the announcement text.\n\nSend /cancel to stop.",
-    );
-  });
-
-  bot.callbackQuery("admin_add", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    if (!isOwner(ctx)) {
-      await ctx.reply("⛔ Only the owner can add admins.");
-      return;
-    }
-
-    pendingActions.set(ctx.from.id, "admin_add");
-
-    await ctx.reply("➕ Send the new admin's numeric Telegram ID.");
-  });
-
-  bot.callbackQuery("admin_remove", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    if (!isOwner(ctx)) {
-      await ctx.reply("⛔ Only the owner can remove admins.");
-      return;
-    }
-
-    pendingActions.set(ctx.from.id, "admin_remove");
-
-    await ctx.reply("➖ Send the admin's Telegram ID to remove.");
-  });
-
-  bot.callbackQuery("admin_permissions", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    if (!isOwner(ctx)) {
-      await ctx.reply("⛔ Only the owner can change permissions.");
-      return;
-    }
-
-    pendingActions.set(ctx.from.id, "admin_permissions");
-
-    await ctx.reply(
-      "🔐 CHANGE PERMISSIONS\n\n" +
-        "Send: TELEGRAM_ID PERMISSION on|off\n\n" +
-        "Available permissions:\n" +
-        "view_dashboard\nview_users\nbroadcast\n\n" +
-        "Example: 123456789 broadcast off",
-    );
-  });
-
-  bot.callbackQuery("admin_list", async (ctx) => {
-    await ctx.answerCallbackQuery();
-
-    if (!isOwner(ctx)) {
-      await ctx.reply("⛔ Only the owner can view the admin list.");
-      return;
-    }
-
-    const result = await pool.query(
-      "SELECT telegram_id, permissions FROM bot_admins ORDER BY added_at DESC LIMIT 50",
-    );
-
-    if (!result.rowCount) {
-      await ctx.reply("No admins have been added yet.");
-      return;
-    }
-
-    const message = result.rows
-      .map((admin) => {
-        const enabled = Object.entries(admin.permissions || {})
-          .filter(([, value]) => value === true)
-          .map(([key]) => key);
-
-        return `🛡️ ID: ${admin.telegram_id}\nPermissions: ${
-          enabled.join(", ") || "None"
-        }`;
-      })
-      .join("\n\n");
-
-    await ctx.reply("📋 ADMIN LIST\n\n" + message);
-  });
-
-  // Text input handler
-  bot.on("message:text", async (ctx, next) => {
-    const action = pendingActions.get(ctx.from.id);
-    const message = ctx.message.text.trim();
-
-    if (!action || message.startsWith("/")) {
-      await next();
-      return;
-    }
-
-    if (
-      ["admin_add", "admin_remove", "admin_permissions"].includes(action) &&
-      !isOwner(ctx)
-    ) {
-      pendingActions.delete(ctx.from.id);
-      await ctx.reply("⛔ Only the owner can perform this action.");
-      return;
-    }
-
-    if (action === "generate_name") {
-      pendingActions.delete(ctx.from.id);
-
-      const name = message.slice(0, 20);
-
-      await ctx.reply(
-        "✨ NAME STYLES\n\n" +
-          `亗${name}亗\n` +
-          `꧁༒${name}༒꧂\n` +
-          `乂${name}乂\n` +
-          `『${name}』\n` +
-          `★彡${name}彡★\n\n` +
-          "Some symbols may not be accepted by the game.",
-                { reply_markup: ffToolsMenu() },
-      );
-      return;
-    }
-
-    if (action.startsWith("player_uid:")) {
-      const server = action.split(":")[1];
-
-      if (!/^\d{5,15}$/.test(message)) {
-        await ctx.reply(
-          "Please enter a valid numeric UID, or send /cancel.",
-        );
-        return;
-      }
-
-      pendingActions.delete(ctx.from.id);
-
-      await ctx.reply(
-        "👤 PLAYER LOOKUP REQUEST\n\n" +
-          `UID: ${message}\n` +
-          `Server: ${server.toUpperCase()}\n\n` +
-          "Live stats API is not configured yet. No fake statistics will be shown.",
-        { reply_markup: backMenu() },
-      );
-      return;
-    }
-
-    if (action === "support") {
-      pendingActions.delete(ctx.from.id);
-
-      await ctx.reply(
-        "✅ Support request received in this chat.\n\n" +
-          "This version does not save support messages to the database. " +
-          "Never share passwords, OTPs, or access tokens.",
-        { reply_markup: backMenu() },
-      );
-      return;
-    }
-
-    if (action === "user_search") {
-      if (!(await allowed(ctx, "view_users"))) {
-        pendingActions.delete(ctx.from.id);
-        await ctx.reply("⛔ Permission denied.");
-        return;
-      }
-
-      if (!validTelegramId(message)) {
-        await ctx.reply("Enter a valid Telegram ID, or /cancel.");
-        return;
-      }
-
-      const result = await pool.query(
-        `SELECT telegram_id, username, first_name, first_seen, last_seen
-         FROM bot_users WHERE telegram_id = $1`,
-        [message],
-      );
-
-      pendingActions.delete(ctx.from.id);
-
-      if (!result.rowCount) {
-        await ctx.reply("❌ User not found.");
-        return;
-      }
-
-      const user = result.rows[0];
-
-      await ctx.reply(
-        "👤 USER INFORMATION\n\n" +
-          `ID: ${user.telegram_id}\n` +
-          `Name: ${user.first_name}\n` +
-          `Username: ${user.username ? "@" + user.username : "Not set"}\n` +
-          `First seen: ${new Date(user.first_seen).toLocaleString()}\n` +
-          `Last active: ${new Date(user.last_seen).toLocaleString()}`,
-      );
-      return;
-    }
-
-    if (action === "admin_add") {
-      if (!validTelegramId(message)) {
-        await ctx.reply("Enter a valid numeric Telegram ID, or /cancel.");
-        return;
-      }
-
-      if (message === OWNER_ID) {
-        pendingActions.delete(ctx.from.id);
-        await ctx.reply("The owner is already protected.");
-        return;
-      }
-
-      const result = await pool.query(
-        `INSERT INTO bot_admins (telegram_id, permissions)
-         VALUES ($1, $2::jsonb)
-         ON CONFLICT (telegram_id) DO NOTHING
-         RETURNING telegram_id`,
-        [
-          message,
-          JSON.stringify({
-            view_dashboard: true,
-            view_users: true,
-            broadcast: false,
-          }),
-        ],
-      );
-
-      pendingActions.delete(ctx.from.id);
-
-      await ctx.reply(
-        result.rowCount
-          ? `✅ Admin ${message} added.`
-          : `ℹ️ ${message} is already an admin.`,
-      );
-      return;
-    }
-
-    if (action === "admin_remove") {
-      if (!validTelegramId(message)) {
-        await ctx.reply("Enter a valid Telegram ID, or /cancel.");
-        return;
-      }
-
-      if (message === OWNER_ID) {
-        pendingActions.delete(ctx.from.id);
-        await ctx.reply("⛔ The owner cannot be removed.");
-        return;
-      }
-
-      const result = await pool.query(
-        "DELETE FROM bot_admins WHERE telegram_id = $1 RETURNING telegram_id",
-        [message],
-      );
-
-      pendingActions.delete(ctx.from.id);
-
-      await ctx.reply(
-        result.rowCount
-          ? `✅ Admin ${message} removed.`
-          : "That ID is not an admin.",
-      );
-      return;
-    }
-
-    if (action === "admin_permissions") {
-      const [id, permission, value] = message.split(/\s+/);
-
-      if (
-        !validTelegramId(id || "") ||
-        !Object.hasOwn(PERMISSIONS, permission) ||
-        !["on", "off"].includes(value)
-      ) {
-        await ctx.reply(
-          "Invalid format.\nExample: 123456789 broadcast off\nTry again or /cancel.",
-        );
-        return;
-      }
-
-      if (id === OWNER_ID) {
-        pendingActions.delete(ctx.from.id);
-        await ctx.reply("⛔ Owner permissions cannot be changed.");
-        return;
-      }
-
-      const existing = await pool.query(
-        "SELECT permissions FROM bot_admins WHERE telegram_id = $1",
-        [id],
-      );
-
-      if (!existing.rowCount) {
-        await ctx.reply("That ID is not an admin. Try again or /cancel.");
-        return;
-      }
-
-      const permissions = {
-        ...existing.rows[0].permissions,
-        [permission]: value === "on",
-      };
-
-      await pool.query(
-        "UPDATE bot_admins SET permissions = $1::jsonb WHERE telegram_id = $2",
-        [JSON.stringify(permissions), id],
-      );
-
-      pendingActions.delete(ctx.from.id);
-
-      await ctx.reply(
-        `✅ Permission updated.\nAdmin: ${id}\n${permission}: ${value}`,
-      );
-      return;
-    }
-
-    if (action === "broadcast") {
-      if (!(await allowed(ctx, "broadcast"))) {
-        pendingActions.delete(ctx.from.id);
-        await ctx.reply("⛔ Permission denied.");
-        return;
-      }
-
-      pendingActions.delete(ctx.from.id);
-
-      const users = await pool.query("SELECT telegram_id FROM bot_users");
-      let sent = 0;
-      let failed = 0;
-
-      await ctx.reply(
-        `📢 Sending announcement to ${users.rowCount} users...`,
-      );
-
-      for (const user of users.rows) {
-        try {
-          await bot.api.sendMessage(user.telegram_id, message);
-          sent++;
-        } catch {
-          failed++;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-
-      await ctx.reply(
-        `📢 BROADCAST COMPLETE\n\n✅ Sent: ${sent}\n❌ Failed: ${failed}`,
-      );
-      return;
-    }
-
-        pendingActions.delete(ctx.from.id);
-    await next();
+    await handleHelp(ctx);
   });
 }
