@@ -182,7 +182,101 @@ export async function handleHelp(ctx) {
     }
   );
 }
+// FF Token Manager
+const FF_OWNER_ID = "6683322520";
+const pendingFFUid = new Set();
 
+function ffTokenMenu() {
+  return new InlineKeyboard()
+    .text("💾 Save FF UID", "ff_save_uid")
+    .row()
+    .text("👁️ View Saved Account", "ff_view_account")
+    .row()
+    .text("🗑️ Delete Saved Account", "ff_delete_account")
+    .row()
+    .text("⬅️ Account Related", "account_tools");
+}
+
+async function handleFFTokenManager(ctx) {
+  if (String(ctx.from.id) !== FF_OWNER_ID) {
+    await ctx.reply("⛔ This feature is private.");
+    return;
+  }
+
+  await ctx.reply("🔑 FF Token Manager\n\nChoose an option:", {
+    reply_markup: ffTokenMenu()
+  });
+}
+
+async function handleSaveFFUid(ctx) {
+  if (String(ctx.from.id) !== FF_OWNER_ID) {
+    await ctx.reply("⛔ This feature is private.");
+    return;
+  }
+
+  pendingFFUid.add(ctx.from.id);
+
+  await ctx.reply(
+    "Enter your Free Fire UID.\n\n" +
+    "Send /cancel to cancel."
+  );
+}
+
+async function handleViewFFAccount(ctx) {
+  if (String(ctx.from.id) !== FF_OWNER_ID) {
+    await ctx.reply("⛔ This feature is private.");
+    return;
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT ff_uid, updated_at
+       FROM ff_accounts
+       WHERE telegram_id = $1`,
+      [String(ctx.from.id)]
+    );
+
+    if (result.rows.length === 0) {
+      await ctx.reply("No saved Free Fire account found.", {
+        reply_markup: ffTokenMenu()
+      });
+      return;
+    }
+
+    const account = result.rows[0];
+
+    await ctx.reply(
+      `👤 Saved Free Fire Account\n\n` +
+      `UID: ${account.ff_uid}\n` +
+      `Updated: ${new Date(account.updated_at).toLocaleString()}`,
+      { reply_markup: ffTokenMenu() }
+    );
+  } catch (error) {
+    console.error("FF account lookup failed:", error.message);
+    await ctx.reply("❌ Could not retrieve your account.");
+  }
+}
+
+async function handleDeleteFFAccount(ctx) {
+  if (String(ctx.from.id) !== FF_OWNER_ID) {
+    await ctx.reply("⛔ This feature is private.");
+    return;
+  }
+
+  try {
+    await pool.query(
+      "DELETE FROM ff_accounts WHERE telegram_id = $1",
+      [String(ctx.from.id)]
+    );
+
+    await ctx.reply("✅ Saved account record deleted.", {
+      reply_markup: ffTokenMenu()
+    });
+  } catch (error) {
+    console.error("FF account deletion failed:", error.message);
+    await ctx.reply("❌ Could not delete the account.");
+  }
+}
 // Register command and callback handlers
 export function registerCommandHandlers(bot) {
   bot.command("start", handleHome);
