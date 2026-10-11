@@ -16,7 +16,6 @@ export function mainMenu(isAdmin = false) {
 
   return keyboard;
 }
-
 // Account Related Menu
 export function accountRelatedMenu() {
   return new InlineKeyboard()
@@ -30,9 +29,10 @@ export function accountRelatedMenu() {
     .row()
     .text("🔒 Account Ban", "account_ban")
     .row()
+    .text("🔑 FF Token Manager", "ff_token_manager")
+    .row()
     .text("⬅️ Main Menu", "home");
 }
-
 // Check whether a user is an admin
 async function isAdmin(userId) {
   try {
