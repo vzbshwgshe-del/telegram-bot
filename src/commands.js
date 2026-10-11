@@ -37,17 +37,16 @@ export function accountRelatedMenu() {
 async function isAdmin(userId) {
   try {
     const result = await pool.query(
-      "SELECT user_id FROM bot_admins WHERE user_id = $1",
+      "SELECT telegram_id FROM bot_admins WHERE telegram_id = $1",
       [String(userId)]
     );
 
     return result.rows.length > 0;
   } catch (error) {
-    console.error("Admin check failed:", error);
+    console.error("Admin check failed:", error.message);
     return false;
   }
 }
-
 // Home / Main Menu
 export async function handleHome(ctx) {
   const userId = ctx.from?.id;
