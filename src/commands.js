@@ -330,6 +330,63 @@ export function registerCommandHandlers(bot) {
 // Compatibility with index.js
 export function registerCommands(bot) {
   registerCommandHandlers(bot);
+    // Handle FF UID input
+  bot.command("cancel", async (ctx) => {
+    if (String(ctx.from.id) !== FF_OWNER_ID) return;
+
+    pendingFFUid.delete(ctx.from.id);
+    await ctx.reply("❌ Operation cancelled.");
+  });
+
+  bot.on("message:text", async (ctx, next) => {
+    if (String(ctx.from.id) !== FF_OWNER_ID) {
+      return next();
+    }
+
+    if (!pendingFFUid.has(ctx.from.id)) {
+      return next();
+    }
+
+    const uid = ctx.message.text.trim();
+
+    if (uid.startsWith("/")) {
+      return next();
+    }
+
+    if (!/^\d{5,20}$/.test(uid)) {
+      await ctx.reply(
+        "❌ Invalid UID. Enter a numeric UID containing 5–20 digits, or send /cancel."
+      );
+      return;
+    }
+
+    pendingFFUid.delete(ctx.from.id);
+
+    await ctx.reply(
+      "✅ UID received: " + uid +
+      "\n\nThe UID has been validated, but it has not been saved yet."
+    );
+  });
+    // FF Token Manager callbacks
+  bot.callbackQuery("ff_token_manager", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleFFTokenManager(ctx);
+  });
+
+  bot.callbackQuery("ff_save_uid", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleSaveFFUid(ctx);
+  });
+
+  bot.callbackQuery("ff_view_account", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleViewFFAccount(ctx);
+  });
+
+  bot.callbackQuery("ff_delete_account", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await handleDeleteFFAccount(ctx);
+  });
   // Admin Panel
 bot.callbackQuery("admin_panel", async (ctx) => {
   await ctx.answerCallbackQuery();
