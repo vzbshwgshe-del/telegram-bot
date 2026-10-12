@@ -124,9 +124,10 @@ export function registerCommands(bot) {
             !configuredAdmins.includes(String(ctx.from.id)) &&
             !databaseAdmin
         ) {
-            return ctx.reply(
+            await ctx.reply(
                 "⛔ You are not authorized to use this command."
             );
+            return;
         }
 
         await ctx.reply(
@@ -238,12 +239,14 @@ export function registerCommands(bot) {
 ⚠️ Account operations require an authorized service.`,
             {
                 reply_markup: {
-                    inline_keyboard: [[
-                        {
-                            text: "Official Garena Website",
-                            url: "https://www.garena.com/"
-                        }
-                    ]]
+                    inline_keyboard: [
+                        [
+                            {
+                                text: "Official Garena Website",
+                                url: "https://www.garena.com/"
+                            }
+                        ]
+                    ]
                 }
             }
         );
@@ -256,13 +259,14 @@ export function registerCommands(bot) {
         await ctx.reply(
             `✨ GET EAT TOKEN
 
-📘 Instructions:
-1. Choose Facebook or Google below.
-2. Complete the sign-in process on the Garena page.
-3. Return to this bot after sign-in.
+📘 HOW TO USE
 
-⚠️ Never send your password, OTP, or session cookies in Telegram.
-⚠️ Opening the login page does not guarantee that an EAT token will be generated.
+1. Choose Facebook or Google below.
+2. Complete the sign-in process on the login page.
+3. Follow the service's instructions.
+
+⚠️ Never send your password, OTP, or session cookies to this bot.
+⚠️ Automatic EAT retrieval is not configured.
 
 👇 SELECT YOUR LOGIN METHOD`,
             {
@@ -365,6 +369,72 @@ export function registerCommands(bot) {
             ctx,
             "↩️ Returned to main menu."
         );
+    });
+
+    // HANDLE TEXT INPUTS
+    bot.on("message:text", async (ctx) => {
+        const session = sessions.get(ctx.from.id);
+
+        if (!session) {
+            return;
+        }
+
+        const input = ctx.message.text.trim();
+
+        // Allow command handlers to handle commands.
+        if (input.startsWith("/")) {
+            return;
+        }
+
+        // Method selection
+        if (session.step === "method") {
+            await ctx.reply(
+                "Please select Via OTP or Via Sec Code."
+            );
+            return;
+        }
+
+        // Email input
+        if (session.step === "email") {
+            const validEmail =
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+
+            if (!validEmail) {
+                await ctx.reply(
+                    "❌ Please enter a valid email address."
+                );
+                return;
+            }
+
+            session.email = input;
+            session.step = "waiting_for_service";
+
+            await ctx.reply(
+                "📧 Email format accepted.\n\nAn authorized OTP service must be configured to continue. No OTP has been sent."
+            );
+            return;
+        }
+
+        // EAT input
+        if (session.step === "eat") {
+            session.step = "waiting_for_service";
+
+            await ctx.reply(
+                "📥 Input received.\n\nAn authorized EAT conversion service must be configured to generate an access token. No conversion was performed."
+            );
+            return;
+        }
+
+        // Token input
+        if (session.step === "token") {
+            session.step = "waiting_for_service";
+
+            await ctx.reply(
+                "🔐 Input received.\n\nAn authorized API must be configured before this account operation can run. No account changes have been made."
+            );
+        }
+    });
+                        }   );
     });
 
     // HANDLE TEXT INPUTS
