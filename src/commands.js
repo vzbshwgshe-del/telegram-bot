@@ -3,7 +3,7 @@ import { pool } from "./database.js";
 export function registerCommands(bot) {
     const sessions = new Map();
 
-    // MAIN MENU — PRESERVED
+    // MAIN MENU
     const mainKeyboard = [
         [{ text: "Bind Info" }, { text: "Bind Email" }],
         [{ text: "Unbind Email" }, { text: "Change Email" }],
@@ -17,6 +17,13 @@ export function registerCommands(bot) {
         [{ text: "Via OTP" }, { text: "Via Sec Code" }],
         [{ text: "Back Menu" }]
     ];
+
+    // GAR​ENA OAUTH LINKS
+    const facebookOAuthUrl =
+        "https://auth.garena.com/universal/oauth?platform=8&response_type=code&locale=en-SG&client_id=100067&redirect_uri=https://api.ff.garena.co.id/auth/auth/callback_n?site=https://api-discountstore.kiosgamer.gameid.garena.co.id/oauth/callback_redirect/";
+
+    const googleOAuthUrl =
+        "https://auth.garena.com/universal/oauth?platform=3&response_type=code&locale=en-SG&client_id=100067&redirect_uri=https://api.ff.garena.co.id/auth/auth/callback_n?site=https://api-discountstore.kiosgamer.gameid.garena.co.id/oauth/callback_redirect/";
 
     // SESSION HELPERS
     function setSession(ctx, action, step) {
@@ -97,7 +104,7 @@ export function registerCommands(bot) {
     bot.command("admin", async (ctx) => {
         const configuredAdmins = (process.env.ADMIN_IDS || "")
             .split(",")
-            .map(id => id.trim())
+            .map((id) => id.trim())
             .filter(Boolean);
 
         let databaseAdmin = false;
@@ -189,7 +196,7 @@ export function registerCommands(bot) {
         setSession(ctx, "eat_to_token", "eat");
 
         await ctx.reply(
-            "🎁 EAT to Token\n\nSend your EAT or URL:\nOr type /clear",
+            "🎁 EAT to Token\n\nSend your EAT or supported URL:\nOr type /clear",
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -223,7 +230,7 @@ export function registerCommands(bot) {
             `✨ HOW TO USE
 
 ✨ 1: Get EAT: Select "Get EAT" and choose a login method.
-✨ 2: Convert: Use "EAT to Token" if you have a supported token.
+✨ 2: Convert: Use "EAT to Token" with a supported input.
 ✨ 3: Check Info: Use "Bind Info".
 ✨ 4: Manage: Bind, Unbind, or Change Email.
 ✨ 5: Advanced: Revoke Token, Send Single Unsubscribe Otp, or Update Bio.
@@ -249,25 +256,26 @@ export function registerCommands(bot) {
         await ctx.reply(
             `✨ GET EAT TOKEN
 
-Choose your account login method.
+📘 Instructions:
+1. Choose Facebook or Google below.
+2. Complete the sign-in process on the Garena page.
+3. Return to this bot after sign-in.
 
-📘 Facebook
-🌐 Google
+⚠️ Never send your password, OTP, or session cookies in Telegram.
+⚠️ Opening the login page does not guarantee that an EAT token will be generated.
 
-⚠️ Never send your password or OTP to this bot.
-
-Select a button below to view instructions.`,
+👇 SELECT YOUR LOGIN METHOD`,
             {
                 reply_markup: {
                     inline_keyboard: [
                         [
                             {
                                 text: "📘 Facebook",
-                                callback_data: "eat_facebook"
+                                url: facebookOAuthUrl
                             },
                             {
                                 text: "🌐 Google",
-                                callback_data: "eat_google"
+                                url: googleOAuthUrl
                             }
                         ],
                         [
@@ -279,38 +287,6 @@ Select a button below to view instructions.`,
                     ]
                 }
             }
-        );
-    });
-
-    // FACEBOOK INSTRUCTIONS
-    bot.callbackQuery("eat_facebook", async (ctx) => {
-        await ctx.answerCallbackQuery();
-
-        await ctx.reply(
-            `📘 FACEBOOK — GET EAT
-
-1. Use a verified, authorized authentication service.
-2. Follow the provider's official sign-in process.
-3. Never send your password, OTP, or session cookies in Telegram.
-4. Continue only if the service explicitly supports authorized EAT retrieval.
-
-⚠️ Automatic EAT retrieval is not configured in this bot.`
-        );
-    });
-
-    // GOOGLE INSTRUCTIONS
-    bot.callbackQuery("eat_google", async (ctx) => {
-        await ctx.answerCallbackQuery();
-
-        await ctx.reply(
-            `🌐 GOOGLE — GET EAT
-
-1. Use a verified, authorized authentication service.
-2. Follow the provider's official sign-in process.
-3. Never send your password, OTP, or session cookies in Telegram.
-4. Continue only if the service explicitly supports authorized EAT retrieval.
-
-⚠️ Automatic EAT retrieval is not configured in this bot.`
         );
     });
 
@@ -377,6 +353,80 @@ Select a button below to view instructions.`,
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
+                    resize_keyboard: true
+                }
+            }
+        );
+    });
+
+    // BACK TO MENU
+    bot.hears("Back Menu", async (ctx) => {
+        await showMainMenu(
+            ctx,
+            "↩️ Returned to main menu."
+        );
+    });
+
+    // HANDLE TEXT INPUTS
+    bot.on("message:text", async (ctx) => {
+        const session = sessions.get(ctx.from.id);
+
+        if (!session) {
+            return;
+        }
+
+        const input = ctx.message.text.trim();
+
+        // Let command handlers process commands.
+        if (input.startsWith("/")) {
+            return;
+        }
+
+        // Method selection
+        if (session.step === "method") {
+            return ctx.reply(
+                "Please select Via OTP or Via Sec Code."
+            );
+        }
+
+        // Email input
+        if (session.step === "email") {
+            const validEmail =
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+
+            if (!validEmail) {
+                return ctx.reply(
+                    "❌ Please enter a valid email address."
+                );
+            }
+
+            session.email = input;
+            session.step = "waiting_for_service";
+
+            return ctx.reply(
+                "📧 Email format accepted.\n\nAn authorized OTP service must be configured to continue. No OTP has been sent."
+            );
+        }
+
+        // EAT input
+        if (session.step === "eat") {
+            session.step = "waiting_for_service";
+
+            return ctx.reply(
+                "📥 Input received.\n\nAn authorized EAT conversion service must be configured to generate an access token. No conversion was performed."
+            );
+        }
+
+        // Token input
+        if (session.step === "token") {
+            session.step = "waiting_for_service";
+
+            return ctx.reply(
+                "🔐 Input received.\n\nAn authorized API must be configured before this account operation can run. No account changes have been made."
+            );
+        }
+    });
+                    }: [[{ text: "Back Menu" }]],
                     resize_keyboard: true
                 }
             }
