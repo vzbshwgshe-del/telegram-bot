@@ -25,10 +25,10 @@ export function registerCommands(bot) {
         sessions.delete(ctx.from.id);
     }
 
-    async function showMainMenu(ctx, text) {
+    async function showMainMenu(ctx, message) {
         clearSession(ctx);
 
-        await ctx.reply(text, {
+        await ctx.reply(message, {
             reply_markup: {
                 keyboard: mainKeyboard,
                 resize_keyboard: true
@@ -40,7 +40,7 @@ export function registerCommands(bot) {
         setSession(ctx, action, "token");
 
         await ctx.reply(
-            `${title}\n\nSend your Access Token:\nOr type /cancel`,
+            `${title}\n\nSend your Access Token:\nOr type /clear`,
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -86,12 +86,12 @@ export function registerCommands(bot) {
         });
     });
 
-    // CANCEL
-    bot.command("cancel", async (ctx) => {
-        await showMainMenu(ctx, "❌ Current action cancelled.");
+    // CLEAR CURRENT ACTION
+    bot.command("clear", async (ctx) => {
+        await showMainMenu(ctx, "🧹 Current action cleared.");
     });
 
-    // ADMIN
+    // ADMIN PANEL — ADMIN IDS MUST BE CONFIGURED
     bot.command("admin", async (ctx) => {
         const configuredAdmins = (process.env.ADMIN_IDS || "")
             .split(",")
@@ -115,21 +115,27 @@ export function registerCommands(bot) {
             !configuredAdmins.includes(String(ctx.from.id)) &&
             !databaseAdmin
         ) {
-            return ctx.reply("⛔ You are not authorized to use this command.");
+            return ctx.reply(
+                "⛔ You are not authorized to use this command."
+            );
         }
 
-        await ctx.reply("👑 Admin panel\n\nAdmin access verified.");
+        await ctx.reply(
+            "👑 Admin Panel\n\n✅ Admin access verified."
+        );
     });
 
-    // MENU BUTTONS
+    // BIND INFO
     bot.hears("Bind Info", ctx =>
         askForToken(ctx, "bind_info", "📊 Check Bind Information")
     );
 
+    // BIND EMAIL
     bot.hears("Bind Email", ctx =>
         askForToken(ctx, "bind_email", "🔗 Bind Email to Account")
     );
 
+    // UNBIND EMAIL
     bot.hears("Unbind Email", async (ctx) => {
         setSession(ctx, "unbind_email", "method");
 
@@ -144,6 +150,7 @@ export function registerCommands(bot) {
         );
     });
 
+    // CHANGE EMAIL
     bot.hears("Change Email", async (ctx) => {
         setSession(ctx, "change_email", "method");
 
@@ -158,15 +165,17 @@ export function registerCommands(bot) {
         );
     });
 
+    // CANCEL BIND
     bot.hears("Cancel Bind", ctx =>
         askForToken(ctx, "cancel_bind", "⚠️ Cancel Bind Request")
     );
 
+    // EAT TO TOKEN
     bot.hears("EAT to Token", async (ctx) => {
         setSession(ctx, "eat_to_token", "eat");
 
         await ctx.reply(
-            "🐑 EAT to Token\n\nSend EAT or URL:\nOr type /cancel",
+            "🐑 EAT to Token\n\nSend EAT or URL:\nOr type /clear",
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -176,14 +185,17 @@ export function registerCommands(bot) {
         );
     });
 
+    // REVOKE TOKEN
     bot.hears("Revoke Token", ctx =>
         askForToken(ctx, "revoke_token", "🚫 Revoke Token")
     );
 
+    // UPDATE BIO
     bot.hears("Update Bio", ctx =>
         askForToken(ctx, "update_bio", "✨ Update Profile Bio")
     );
 
+    // HOW TO USE
     bot.hears("How to Use", async (ctx) => {
         await ctx.reply(
             `✨ HOW TO USE
@@ -205,6 +217,7 @@ export function registerCommands(bot) {
         );
     });
 
+    // GET EAT
     bot.hears("Get EAT", async (ctx) => {
         await ctx.reply(
             `✨ GET EAT TOKEN
@@ -229,11 +242,12 @@ Next Step: Use "EAT to Token" button.`,
         );
     });
 
+    // SEND SINGLE UNSUBSCRIBE OTP
     bot.hears("Send Single Unsubscribe Otp", async (ctx) => {
         setSession(ctx, "unsubscribe_otp", "email");
 
         await ctx.reply(
-            "📧 Send Single Unsubscribe Otp\n\nSend email address:\nOr type /cancel",
+            "📧 Send Single Unsubscribe Otp\n\nSend email address:\nOr type /clear",
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -243,6 +257,7 @@ Next Step: Use "EAT to Token" button.`,
         );
     });
 
+    // VIA OTP
     bot.hears("Via OTP", async (ctx) => {
         const session = sessions.get(ctx.from.id);
 
@@ -252,7 +267,7 @@ Next Step: Use "EAT to Token" button.`,
         session.step = "token";
 
         await ctx.reply(
-            "Send your Access Token:\nOr type /cancel",
+            "Send your Access Token:\nOr type /clear",
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -262,6 +277,7 @@ Next Step: Use "EAT to Token" button.`,
         );
     });
 
+    // VIA SECURITY CODE
     bot.hears("Via Sec Code", async (ctx) => {
         const session = sessions.get(ctx.from.id);
 
@@ -271,7 +287,7 @@ Next Step: Use "EAT to Token" button.`,
         session.step = "token";
 
         await ctx.reply(
-            "Send your Access Token:\nOr type /cancel",
+            "Send your Access Token:\nOr type /clear",
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -281,6 +297,7 @@ Next Step: Use "EAT to Token" button.`,
         );
     });
 
+    // BACK TO MENU
     bot.hears("Back Menu", async (ctx) => {
         await showMainMenu(ctx, "↩️ Returned to main menu.");
     });
@@ -288,22 +305,28 @@ Next Step: Use "EAT to Token" button.`,
     // HANDLE TEXT INPUTS
     bot.on("message:text", async (ctx) => {
         const session = sessions.get(ctx.from.id);
+
         if (!session) return;
 
         const text = ctx.message.text.trim();
 
-        // Other commands should be handled by their own handlers.
+        // Commands have their own handlers.
         if (text.startsWith("/")) return;
 
         if (session.step === "method") {
-            return ctx.reply("Please select Via OTP or Via Sec Code.");
+            return ctx.reply(
+                "Please select Via OTP or Via Sec Code."
+            );
         }
 
         if (session.step === "email") {
-            const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+            const validEmail =
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
 
             if (!validEmail) {
-                return ctx.reply("❌ Please enter a valid email address.");
+                return ctx.reply(
+                    "❌ Please enter a valid email address."
+                );
             }
 
             session.email = text;
