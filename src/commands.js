@@ -3,6 +3,7 @@ import { pool } from "./database.js";
 export function registerCommands(bot) {
     const sessions = new Map();
 
+    // MAIN MENU — PRESERVED
     const mainKeyboard = [
         [{ text: "Bind Info" }, { text: "Bind Email" }],
         [{ text: "Unbind Email" }, { text: "Change Email" }],
@@ -17,6 +18,7 @@ export function registerCommands(bot) {
         [{ text: "Back Menu" }]
     ];
 
+    // SESSION HELPERS
     function setSession(ctx, action, step) {
         sessions.set(ctx.from.id, { action, step });
     }
@@ -91,7 +93,7 @@ export function registerCommands(bot) {
         await showMainMenu(ctx, "🧹 Current action cleared.");
     });
 
-    // ADMIN PANEL — ADMIN IDS MUST BE CONFIGURED
+    // ADMIN PANEL
     bot.command("admin", async (ctx) => {
         const configuredAdmins = (process.env.ADMIN_IDS || "")
             .split(",")
@@ -126,14 +128,22 @@ export function registerCommands(bot) {
     });
 
     // BIND INFO
-    bot.hears("Bind Info", ctx =>
-        askForToken(ctx, "bind_info", "📊 Check Bind Information")
-    );
+    bot.hears("Bind Info", async (ctx) => {
+        await askForToken(
+            ctx,
+            "bind_info",
+            "📊 Check Bind Information"
+        );
+    });
 
     // BIND EMAIL
-    bot.hears("Bind Email", ctx =>
-        askForToken(ctx, "bind_email", "🔗 Bind Email to Account")
-    );
+    bot.hears("Bind Email", async (ctx) => {
+        await askForToken(
+            ctx,
+            "bind_email",
+            "🔗 Bind Email to Account"
+        );
+    });
 
     // UNBIND EMAIL
     bot.hears("Unbind Email", async (ctx) => {
@@ -166,16 +176,20 @@ export function registerCommands(bot) {
     });
 
     // CANCEL BIND
-    bot.hears("Cancel Bind", ctx =>
-        askForToken(ctx, "cancel_bind", "⚠️ Cancel Bind Request")
-    );
+    bot.hears("Cancel Bind", async (ctx) => {
+        await askForToken(
+            ctx,
+            "cancel_bind",
+            "⚠️ Cancel Bind Request"
+        );
+    });
 
     // EAT TO TOKEN
     bot.hears("EAT to Token", async (ctx) => {
         setSession(ctx, "eat_to_token", "eat");
 
         await ctx.reply(
-            "🐑 EAT to Token\n\nSend EAT or URL:\nOr type /clear",
+            "🎁 EAT to Token\n\nSend your EAT or URL:\nOr type /clear",
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -186,30 +200,41 @@ export function registerCommands(bot) {
     });
 
     // REVOKE TOKEN
-    bot.hears("Revoke Token", ctx =>
-        askForToken(ctx, "revoke_token", "🚫 Revoke Token")
-    );
+    bot.hears("Revoke Token", async (ctx) => {
+        await askForToken(
+            ctx,
+            "revoke_token",
+            "🚫 Revoke Token"
+        );
+    });
 
     // UPDATE BIO
-    bot.hears("Update Bio", ctx =>
-        askForToken(ctx, "update_bio", "✨ Update Profile Bio")
-    );
+    bot.hears("Update Bio", async (ctx) => {
+        await askForToken(
+            ctx,
+            "update_bio",
+            "✨ Update Profile Bio"
+        );
+    });
 
     // HOW TO USE
     bot.hears("How to Use", async (ctx) => {
         await ctx.reply(
             `✨ HOW TO USE
 
-✨ 1: Get Token: Use "Get EAT" & "EAT to Token"
-✨ 2: Check Info: Use "Bind Info"
-✨ 3: Manage: Bind, Unbind, Change Email
-✨ 4: Advanced: Revoke, Send Single Unsubscribe Otp, Update Bio`,
+✨ 1: Get EAT: Select "Get EAT" and choose a login method.
+✨ 2: Convert: Use "EAT to Token" if you have a supported token.
+✨ 3: Check Info: Use "Bind Info".
+✨ 4: Manage: Bind, Unbind, or Change Email.
+✨ 5: Advanced: Revoke Token, Send Single Unsubscribe Otp, or Update Bio.
+
+⚠️ Account operations require an authorized service.`,
             {
                 reply_markup: {
                     inline_keyboard: [[
                         {
-                            text: "Watch Tutorial",
-                            url: "https://telegram.org/"
+                            text: "Official Garena Website",
+                            url: "https://www.garena.com/"
                         }
                     ]]
                 }
@@ -219,26 +244,83 @@ export function registerCommands(bot) {
 
     // GET EAT
     bot.hears("Get EAT", async (ctx) => {
+        clearSession(ctx);
+
         await ctx.reply(
             `✨ GET EAT TOKEN
 
-🐑 Method 1: From Game
-Settings → Account → Copy Link
+Choose your account login method.
 
-🐑 Method 2: From Website
-Use the official game service to obtain your account link.
+📘 Facebook
+🌐 Google
 
-Next Step: Use "EAT to Token" button.`,
+⚠️ Never send your password or OTP to this bot.
+
+Select a button below to view instructions.`,
             {
                 reply_markup: {
-                    inline_keyboard: [[
-                        {
-                            text: "Open official Garena website",
-                            url: "https://www.garena.com/"
-                        }
-                    ]]
+                    inline_keyboard: [
+                        [
+                            {
+                                text: "📘 Facebook",
+                                callback_data: "eat_facebook"
+                            },
+                            {
+                                text: "🌐 Google",
+                                callback_data: "eat_google"
+                            }
+                        ],
+                        [
+                            {
+                                text: "🔙 Back to Menu",
+                                callback_data: "eat_back"
+                            }
+                        ]
+                    ]
                 }
             }
+        );
+    });
+
+    // FACEBOOK INSTRUCTIONS
+    bot.callbackQuery("eat_facebook", async (ctx) => {
+        await ctx.answerCallbackQuery();
+
+        await ctx.reply(
+            `📘 FACEBOOK — GET EAT
+
+1. Use a verified, authorized authentication service.
+2. Follow the provider's official sign-in process.
+3. Never send your password, OTP, or session cookies in Telegram.
+4. Continue only if the service explicitly supports authorized EAT retrieval.
+
+⚠️ Automatic EAT retrieval is not configured in this bot.`
+        );
+    });
+
+    // GOOGLE INSTRUCTIONS
+    bot.callbackQuery("eat_google", async (ctx) => {
+        await ctx.answerCallbackQuery();
+
+        await ctx.reply(
+            `🌐 GOOGLE — GET EAT
+
+1. Use a verified, authorized authentication service.
+2. Follow the provider's official sign-in process.
+3. Never send your password, OTP, or session cookies in Telegram.
+4. Continue only if the service explicitly supports authorized EAT retrieval.
+
+⚠️ Automatic EAT retrieval is not configured in this bot.`
+        );
+    });
+
+    // GET EAT — BACK TO MENU
+    bot.callbackQuery("eat_back", async (ctx) => {
+        await ctx.answerCallbackQuery();
+
+        await showMainMenu(
+            ctx,
+            "↩️ Returned to main menu."
         );
     });
 
@@ -261,7 +343,9 @@ Next Step: Use "EAT to Token" button.`,
     bot.hears("Via OTP", async (ctx) => {
         const session = sessions.get(ctx.from.id);
 
-        if (!session || session.step !== "method") return;
+        if (!session || session.step !== "method") {
+            return;
+        }
 
         session.method = "otp";
         session.step = "token";
@@ -281,7 +365,9 @@ Next Step: Use "EAT to Token" button.`,
     bot.hears("Via Sec Code", async (ctx) => {
         const session = sessions.get(ctx.from.id);
 
-        if (!session || session.step !== "method") return;
+        if (!session || session.step !== "method") {
+            return;
+        }
 
         session.method = "security_code";
         session.step = "token";
@@ -299,29 +385,38 @@ Next Step: Use "EAT to Token" button.`,
 
     // BACK TO MENU
     bot.hears("Back Menu", async (ctx) => {
-        await showMainMenu(ctx, "↩️ Returned to main menu.");
+        await showMainMenu(
+            ctx,
+            "↩️ Returned to main menu."
+        );
     });
 
     // HANDLE TEXT INPUTS
     bot.on("message:text", async (ctx) => {
         const session = sessions.get(ctx.from.id);
 
-        if (!session) return;
+        if (!session) {
+            return;
+        }
 
-        const text = ctx.message.text.trim();
+        const input = ctx.message.text.trim();
 
-        // Commands have their own handlers.
-        if (text.startsWith("/")) return;
+        // Let command handlers process commands.
+        if (input.startsWith("/")) {
+            return;
+        }
 
+        // Method selection
         if (session.step === "method") {
             return ctx.reply(
                 "Please select Via OTP or Via Sec Code."
             );
         }
 
+        // Email input
         if (session.step === "email") {
             const validEmail =
-                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
 
             if (!validEmail) {
                 return ctx.reply(
@@ -329,7 +424,7 @@ Next Step: Use "EAT to Token" button.`,
                 );
             }
 
-            session.email = text;
+            session.email = input;
             session.step = "waiting_for_service";
 
             return ctx.reply(
@@ -337,19 +432,21 @@ Next Step: Use "EAT to Token" button.`,
             );
         }
 
+        // EAT input
         if (session.step === "eat") {
             session.step = "waiting_for_service";
 
             return ctx.reply(
-                "📥 Input received.\n\nAn authorized EAT conversion service must be configured to generate an access token."
+                "📥 Input received.\n\nAn authorized EAT conversion service must be configured to generate an access token. No conversion was performed."
             );
         }
 
+        // Token input
         if (session.step === "token") {
             session.step = "waiting_for_service";
 
             return ctx.reply(
-                "🔐 Input received.\n\nThe account operation cannot run until an authorized API is configured. No account changes have been made."
+                "🔐 Input received.\n\nAn authorized API must be configured before this account operation can run. No account changes have been made."
             );
         }
     });
