@@ -11,7 +11,7 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "10kb" }));
 
-const PORT = Number(process.env.API_PORT || 3000);
+const PORT = Number(process.env.PORT || process.env.API_PORT || 8080);
 const ADMIN_SECRET = process.env.API_ADMIN_SECRET;
 
 if (!ADMIN_SECRET || ADMIN_SECRET.length < 32) {
