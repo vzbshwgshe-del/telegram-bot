@@ -1,7 +1,11 @@
 import "dotenv/config";
 import { Bot } from "grammy";
-import { pool, initializeDatabase } from "./src/database.js";
+import {
+    pool,
+    initializeDatabase
+} from "./src/database.js";
 import { registerCommands } from "./src/commands.js";
+import { startApi } from "./src/api.js";
 
 if (!process.env.TELEGRAM_BOT_TOKEN) {
     throw new Error("TELEGRAM_BOT_TOKEN is missing.");
@@ -17,9 +21,17 @@ bot.catch((error) => {
     console.error("[BOT ERROR]", error.error);
 });
 
-async function start() {
-    await initializeDatabase();
+let apiServer;
 
+async function start() {
+    // Initialize PostgreSQL first.
+    await initializeDatabase();
+    console.log("Database initialized successfully.");
+
+    // Start the HTTP API on FadeHost's assigned port.
+    apiServer = await startApi();
+
+    // Register existing Telegram bot commands.
     registerCommands(bot);
 
     await bot.api.setMyCommands([
@@ -28,6 +40,7 @@ async function start() {
         { command: "clear", description: "Clear current action" }
     ]);
 
+    // Start the Telegram bot.
     await bot.start({
         onStart: (info) => {
             console.log(`Bot started: @${info.username}`);
@@ -42,7 +55,15 @@ start().catch((error) => {
 
 async function shutdown() {
     console.log("Shutting down...");
+
     await bot.stop();
+
+    if (apiServer) {
+        await new Promise((resolve) => {
+            apiServer.close(resolve);
+        });
+    }
+
     await pool.end();
     process.exit(0);
 }
