@@ -1,13 +1,18 @@
 import { pool } from "./database.js";
 
-// TEMPORARY EAT CONVERSION PROVIDER
-// The provider uses HTTP. Do not use real account credentials
-// until a secure HTTPS endpoint is available.
+// ==================================================
+// TEMPORARY EAT CONVERSION API
+// ==================================================
+// WARNING: The provider uses HTTP. Do not send real
+// account credentials until a secure HTTPS endpoint
+// has been verified.
+// ==================================================
+
 async function convertEatToken(eatToken) {
     const apiKey = process.env.SIAMBHAU_API_KEY;
 
     if (!apiKey) {
-        throw new Error("Conversion API key is not configured.");
+        throw new Error("SIAMBHAU_API_KEY is missing in FadeHost variables.");
     }
 
     const url = new URL(
@@ -17,9 +22,23 @@ async function convertEatToken(eatToken) {
     url.searchParams.set("eat_token", eatToken);
     url.searchParams.set("key", apiKey);
 
-    const response = await fetch(url, {
-        signal: AbortSignal.timeout(15000)
-    });
+    let response;
+
+    try {
+        response = await fetch(url, {
+            method: "GET",
+            signal: AbortSignal.timeout(15000)
+        });
+    } catch (error) {
+        if (error.name === "TimeoutError" ||
+            error.name === "AbortError") {
+            throw new Error("The conversion service timed out.");
+        }
+
+        throw new Error(
+            "Cannot connect to the conversion service."
+        );
+    }
 
     if (!response.ok) {
         throw new Error(
@@ -27,14 +46,41 @@ async function convertEatToken(eatToken) {
         );
     }
 
-    const data = await response.json();
+    let data;
+
+    try {
+        data = await response.json();
+    } catch {
+        throw new Error(
+            "The conversion service returned an invalid JSON response."
+        );
+    }
+
+    if (data.status !== "success") {
+        if (data.error === "invalid-eat-token") {
+            throw new Error(
+                "The service rejected the supplied EAT token."
+            );
+        }
+
+        if (data.error) {
+            throw new Error(
+                `The service reported: ${String(data.error).slice(0, 150)}`
+            );
+        }
+
+        throw new Error(
+            "The service did not report a successful conversion."
+        );
+    }
 
     if (
-        data.status !== "success" ||
         typeof data.access_token !== "string" ||
-        !data.access_token
+        data.access_token.length === 0
     ) {
-        throw new Error("Conversion failed or returned invalid data.");
+        throw new Error(
+            "The service reported success but returned no access token."
+        );
     }
 
     return data;
@@ -235,7 +281,9 @@ export function registerCommands(bot) {
         setSession(ctx, "eat_to_token", "eat");
 
         await ctx.reply(
-            "🎁 EAT to Token\n\nSend your EAT token or supported URL.\nOnly use credentials you are authorized to manage.\n\nOr type /clear",
+            "🎁 EAT to Token\n\n" +
+            "Send an EAT token or supported URL for an account you are authorized to manage.\n\n" +
+            "Or type /clear",
             {
                 reply_markup: {
                     keyboard: [[{ text: "Back Menu" }]],
@@ -268,12 +316,12 @@ export function registerCommands(bot) {
         await ctx.reply(
             `✨ HOW TO USE
 
-1. Choose "Get EAT" to view the login instructions.
+1. Choose "Get EAT" for login instructions.
 2. Choose "EAT to Token" to submit an authorized input.
-3. Use "Bind Info" for supported account information.
+3. Use "Bind Info" with a supported service.
 4. Other account operations require their own authorized services.
 
-⚠️ Never share your account tokens with untrusted services.`,
+⚠️ Never share account tokens with untrusted services.`,
             {
                 reply_markup: {
                     inline_keyboard: [
@@ -402,6 +450,7 @@ Only sign in through a service you trust.`,
 
         const input = ctx.message.text.trim();
 
+        // Allow command handlers to handle commands.
         if (input.startsWith("/")) {
             return;
         }
@@ -415,25 +464,30 @@ Only sign in through a service you trust.`,
         }
 
         // EAT INPUT
-        if (session.action === "eat_to_token" && session.step === "eat") {
+        if (
+            session.action === "eat_to_token" &&
+            session.step === "eat"
+        ) {
             if (!input || input.length > 4096) {
-                await ctx.reply("❌ Please send a valid EAT token or URL.");
+                await ctx.reply(
+                    "❌ Please send a valid input."
+                );
                 return;
             }
 
-            // Do not accept arbitrary URLs as EAT tokens.
-            // Extract a token only from the expected URL parameter.
             let eatToken = input;
 
+            // Only extract a token from the expected URL parameters.
             if (/^https?:\/\//i.test(input)) {
                 try {
                     const parsedUrl = new URL(input);
+
                     eatToken =
                         parsedUrl.searchParams.get("eat_token") ||
                         parsedUrl.searchParams.get("eat") ||
                         "";
                 } catch {
-                    await ctx.reply("❌ That URL is not valid.");
+                    await ctx.reply("❌ The URL is invalid.");
                     return;
                 }
             }
@@ -444,22 +498,25 @@ Only sign in through a service you trust.`,
                 /\s/.test(eatToken)
             ) {
                 await ctx.reply(
-                    "❌ Invalid input. Send a token or a URL containing an EAT token."
+                    "❌ Input format is invalid. Please check the token or URL."
                 );
                 return;
             }
 
             session.step = "converting";
 
-            await ctx.reply("⏳ Sending request to the temporary conversion service...");
+            await ctx.reply(
+                "⏳ Requesting conversion. Please wait..."
+            );
 
             try {
                 const result = await convertEatToken(eatToken);
 
                 clearSession(ctx);
 
+                // Do not log tokens or API keys.
                 await ctx.reply(
-                    "✅ Conversion service reported success.\n\n" +
+                    "✅ The conversion service reported success.\n\n" +
                     `👤 Nickname: ${result.account_nickname || "Unknown"}\n` +
                     `🌍 Region: ${result.region || "Unknown"}\n\n` +
                     `🔑 Access Token:\n${result.access_token}`
@@ -467,13 +524,16 @@ Only sign in through a service you trust.`,
             } catch (error) {
                 clearSession(ctx);
 
-                // Do not log tokens or the complete request URL.
-                console.error("EAT conversion failed:", error.message);
+                // Error messages are deliberately sanitized.
+                // Never log the request URL, input token, or API key.
+                console.error(
+                    "EAT conversion failed:",
+                    error.message
+                );
 
                 await ctx.reply(
                     "❌ Conversion failed.\n\n" +
-                    "The service may be unavailable or the input may be invalid. " +
-                    "No access token was returned."
+                    `Reason: ${error.message}`
                 );
             }
 
@@ -495,8 +555,10 @@ Only sign in through a service you trust.`,
             session.step = "waiting_for_service";
 
             await ctx.reply(
-                "📧 Email format accepted.\n\nAn authorized OTP service must be configured to continue. No OTP has been sent."
+                "📧 Email format accepted.\n\n" +
+                "An authorized OTP service must be configured to continue. No OTP has been sent."
             );
+
             return;
         }
 
@@ -505,8 +567,9 @@ Only sign in through a service you trust.`,
             session.step = "waiting_for_service";
 
             await ctx.reply(
-                "🔐 Input received.\n\nAn authorized API must be configured before this account operation can run. No account changes have been made."
+                "🔐 Input received.\n\n" +
+                "An authorized API must be configured before this account operation can run. No account changes have been made."
             );
         }
     });
-                    }
+        }
