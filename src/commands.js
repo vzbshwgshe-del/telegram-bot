@@ -282,11 +282,11 @@ const googleOAuthUrl =
                         [
                             {
                                 text: "📘 Facebook",
-                                url: facebookOAuthUrl
+                                url: googleOAuthUrl
                             },
                             {
                                 text: "🌐 Google",
-                                url: googleOAuthUrl
+                                url: facebookOAuthUrl
                             }
                         ],
                         [
