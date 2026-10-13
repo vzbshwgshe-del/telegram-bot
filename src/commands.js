@@ -18,7 +18,7 @@ export function registerCommands(bot) {
         [{ text: "Back Menu" }]
     ];
 
-    // GAR​ENA OAUTH LINKS
+    // GARENA OAUTH LINKS
     const facebookOAuthUrl =
         "https://auth.garena.com/universal/oauth?platform=8&response_type=code&locale=en-SG&client_id=100067&redirect_uri=https://api.ff.garena.co.id/auth/auth/callback_n?site=https://api-discountstore.kiosgamer.gameid.garena.co.id/oauth/callback_redirect/";
 
@@ -59,7 +59,7 @@ export function registerCommands(bot) {
         );
     }
 
-    // START
+    // START COMMAND
     bot.command("start", async (ctx) => {
         clearSession(ctx);
 
@@ -97,7 +97,10 @@ export function registerCommands(bot) {
 
     // CLEAR CURRENT ACTION
     bot.command("clear", async (ctx) => {
-        await showMainMenu(ctx, "🧹 Current action cleared.");
+        await showMainMenu(
+            ctx,
+            "🧹 Current action cleared."
+        );
     });
 
     // ADMIN PANEL
@@ -117,7 +120,10 @@ export function registerCommands(bot) {
 
             databaseAdmin = result.rowCount > 0;
         } catch (error) {
-            console.error("Admin lookup failed:", error.message);
+            console.error(
+                "Admin lookup failed:",
+                error.message
+            );
         }
 
         if (
@@ -294,7 +300,7 @@ export function registerCommands(bot) {
         );
     });
 
-    // GET EAT — BACK TO MENU
+    // GET EAT: BACK TO MENU
     bot.callbackQuery("eat_back", async (ctx) => {
         await ctx.answerCallbackQuery();
 
@@ -386,7 +392,7 @@ export function registerCommands(bot) {
             return;
         }
 
-        // Method selection
+        // METHOD SELECTION
         if (session.step === "method") {
             await ctx.reply(
                 "Please select Via OTP or Via Sec Code."
@@ -394,7 +400,7 @@ export function registerCommands(bot) {
             return;
         }
 
-        // Email input
+        // EMAIL INPUT
         if (session.step === "email") {
             const validEmail =
                 /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
@@ -415,7 +421,7 @@ export function registerCommands(bot) {
             return;
         }
 
-        // EAT input
+        // EAT INPUT
         if (session.step === "eat") {
             session.step = "waiting_for_service";
 
@@ -425,7 +431,7 @@ export function registerCommands(bot) {
             return;
         }
 
-        // Token input
+        // TOKEN INPUT
         if (session.step === "token") {
             session.step = "waiting_for_service";
 
@@ -434,140 +440,4 @@ export function registerCommands(bot) {
             );
         }
     });
-                        }   );
-    });
-
-    // HANDLE TEXT INPUTS
-    bot.on("message:text", async (ctx) => {
-        const session = sessions.get(ctx.from.id);
-
-        if (!session) {
-            return;
-        }
-
-        const input = ctx.message.text.trim();
-
-        // Let command handlers process commands.
-        if (input.startsWith("/")) {
-            return;
-        }
-
-        // Method selection
-        if (session.step === "method") {
-            return ctx.reply(
-                "Please select Via OTP or Via Sec Code."
-            );
-        }
-
-        // Email input
-        if (session.step === "email") {
-            const validEmail =
-                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
-
-            if (!validEmail) {
-                return ctx.reply(
-                    "❌ Please enter a valid email address."
-                );
-            }
-
-            session.email = input;
-            session.step = "waiting_for_service";
-
-            return ctx.reply(
-                "📧 Email format accepted.\n\nAn authorized OTP service must be configured to continue. No OTP has been sent."
-            );
-        }
-
-        // EAT input
-        if (session.step === "eat") {
-            session.step = "waiting_for_service";
-
-            return ctx.reply(
-                "📥 Input received.\n\nAn authorized EAT conversion service must be configured to generate an access token. No conversion was performed."
-            );
-        }
-
-        // Token input
-        if (session.step === "token") {
-            session.step = "waiting_for_service";
-
-            return ctx.reply(
-                "🔐 Input received.\n\nAn authorized API must be configured before this account operation can run. No account changes have been made."
-            );
-        }
-    });
-                    }: [[{ text: "Back Menu" }]],
-                    resize_keyboard: true
-                }
-            }
-        );
-    });
-
-    // BACK TO MENU
-    bot.hears("Back Menu", async (ctx) => {
-        await showMainMenu(
-            ctx,
-            "↩️ Returned to main menu."
-        );
-    });
-
-    // HANDLE TEXT INPUTS
-    bot.on("message:text", async (ctx) => {
-        const session = sessions.get(ctx.from.id);
-
-        if (!session) {
-            return;
-        }
-
-        const input = ctx.message.text.trim();
-
-        // Let command handlers process commands.
-        if (input.startsWith("/")) {
-            return;
-        }
-
-        // Method selection
-        if (session.step === "method") {
-            return ctx.reply(
-                "Please select Via OTP or Via Sec Code."
-            );
-        }
-
-        // Email input
-        if (session.step === "email") {
-            const validEmail =
-                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
-
-            if (!validEmail) {
-                return ctx.reply(
-                    "❌ Please enter a valid email address."
-                );
-            }
-
-            session.email = input;
-            session.step = "waiting_for_service";
-
-            return ctx.reply(
-                "📧 Email format accepted.\n\nAn authorized OTP service must be configured to continue. No OTP has been sent."
-            );
-        }
-
-        // EAT input
-        if (session.step === "eat") {
-            session.step = "waiting_for_service";
-
-            return ctx.reply(
-                "📥 Input received.\n\nAn authorized EAT conversion service must be configured to generate an access token. No conversion was performed."
-            );
-        }
-
-        // Token input
-        if (session.step === "token") {
-            session.step = "waiting_for_service";
-
-            return ctx.reply(
-                "🔐 Input received.\n\nAn authorized API must be configured before this account operation can run. No account changes have been made."
-            );
-        }
-    });
-            }
+}
