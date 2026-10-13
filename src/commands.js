@@ -199,7 +199,7 @@ const googleOAuthUrl =
         );
     });
 
-    // EAT TO TOKEN
+    // EAT/URL TO TOKEN
     bot.hears("EAT to Token", async (ctx) => {
         setSession(ctx, "eat_to_token", "eat");
 
@@ -270,9 +270,8 @@ const googleOAuthUrl =
 
 1. Choose Facebook or Google below.
 2. Complete the sign-in process on the login page.
-3. Follow the service's instructions.
+3. Copy the link.
 
-⚠️ Never send your password, OTP, or session cookies to this bot.
 ⚠️ Automatic EAT retrieval is not configured.
 
 👇 SELECT YOUR LOGIN METHOD`,
